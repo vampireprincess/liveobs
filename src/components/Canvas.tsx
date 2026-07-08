@@ -59,6 +59,7 @@ export default function Canvas() {
   const [drag, setDrag] = useState<DragState>(null);
   const [snapLines, setSnapLines] = useState<{x?: number, y?: number}>({});
   const [simulatedSeconds, setSimulatedSeconds] = useState(0);
+  const [runtimeRebuildNonce, setRuntimeRebuildNonce] = useState(0);
   const dragRef = useRef<DragState>(null);
   dragRef.current = drag;
 
@@ -73,6 +74,12 @@ export default function Canvas() {
   }, [W, H]);
 
   useEffect(() => {
+    const handler = () => setRuntimeRebuildNonce((n) => n + 1);
+    window.addEventListener("liveobs-force-runtime-rebuild", handler);
+    return () => window.removeEventListener("liveobs-force-runtime-rebuild", handler);
+  }, []);
+
+  useEffect(() => {
     if (!data || !runtimeRef.current) return;
     if (runtimePreview) {
       const eng = new RuntimeEngine(runtimeRef.current, data, { editorMode: false, timeScale: runtimePreviewSpeed });
@@ -80,7 +87,7 @@ export default function Canvas() {
       setSimulatedSeconds(0);
       return () => { eng.destroy(); engineRef.current = null; setSimulatedSeconds(0); };
     }
-  }, [runtimePreview, data]);
+  }, [runtimePreview, data, runtimeRebuildNonce]);
 
   useEffect(() => {
     engineRef.current?.setTimeScale(runtimePreviewSpeed);
