@@ -225,7 +225,17 @@ export class RuntimeEngine {
         const s = a.shadow; const sh = `drop-shadow(${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color})`;
         el.style.filter = a.animation === "blur" ? el.style.filter + " " + sh : sh;
       }
-      el.innerHTML = this.assetMarkup(a);
+      const staticMedia = a.mediaId ? this.data.media.find((m) => m.id === a.mediaId) : undefined;
+      if (staticMedia?.type === "lottie") {
+        try {
+          const isData = staticMedia.dataUrl.startsWith("data:");
+          lottie.loadAnimation(isData
+            ? { container: el, renderer: "svg", loop: true, autoplay: true, animationData: JSON.parse(atob(staticMedia.dataUrl.split(",")[1])) }
+            : { container: el, renderer: "svg", loop: true, autoplay: true, path: staticMedia.dataUrl });
+        } catch (e) { console.warn("Lottie runtime error", e); }
+      } else {
+        el.innerHTML = this.assetMarkup(a);
+      }
       layerEl.appendChild(el);
     }
 

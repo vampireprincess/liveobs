@@ -208,7 +208,16 @@ RuntimeEngine.prototype.build=function(){
         var s2=a.shadow; el.style.filter='drop-shadow('+s2.offsetX+'px '+s2.offsetY+'px '+s2.blur+'px '+s2.color+')';
       }
     }
-    el.innerHTML=self.assetMarkup(a);
+    var staticMedia=a.mediaId?d.media.find(function(m){return m.id===a.mediaId;}):null;
+    if(staticMedia&&staticMedia.type==='lottie'){
+      try{
+        var isData=staticMedia.dataUrl.indexOf('data:')===0;
+        if(isData){ lottie.loadAnimation({container:el,renderer:'svg',loop:true,autoplay:true,animationData:JSON.parse(atob(staticMedia.dataUrl.split(',')[1]))}); }
+        else { lottie.loadAnimation({container:el,renderer:'svg',loop:true,autoplay:true,path:staticMedia.dataUrl}); }
+      }catch(e){ console.warn('Lottie runtime error',e); }
+    } else {
+      el.innerHTML=self.assetMarkup(a);
+    }
     layerEl.appendChild(el);
   });
   this.particleCanvas=document.createElement('canvas');
