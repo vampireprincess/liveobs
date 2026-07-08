@@ -94,11 +94,24 @@ export default function GradientTab() {
     const css = getGradientCss(g);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${data.canvasWidth}" height="${data.canvasHeight}" viewBox="0 0 ${data.canvasWidth} ${data.canvasHeight}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:${css};"></div></foreignObject></svg>`;
     const encoded = btoa(unescape(encodeURIComponent(svg)));
+    const dataUrl = `data:image/svg+xml;base64,${encoded}`;
+    const existingAsset = data.assets.find((a) => a.name === "Gradient Layer" && data.media.find((m) => m.id === a.mediaId)?.name === "Gradient Layer");
+    const existingMediaId = existingAsset?.mediaId;
+    if (existingAsset && existingMediaId) {
+      useStore.getState().update((d) => {
+        const media = d.media.find((m) => m.id === existingMediaId);
+        if (media) Object.assign(media, { dataUrl, width: d.canvasWidth, height: d.canvasHeight });
+        const asset = d.assets.find((a) => a.id === existingAsset.id);
+        if (asset) Object.assign(asset, { x: 0, y: 0, width: d.canvasWidth, height: d.canvasHeight, fit: "fill" });
+      });
+      useStore.getState().select("asset", existingAsset.id);
+      return;
+    }
     const media = {
       id: uid(),
       name: "Gradient Layer",
       type: "svg" as const,
-      dataUrl: `data:image/svg+xml;base64,${encoded}`,
+      dataUrl,
       width: data.canvasWidth,
       height: data.canvasHeight,
       categoryId: "static-assets",
@@ -280,7 +293,7 @@ export default function GradientTab() {
             ).map((m) => (
               <button
                 key={m.v}
-                onClick={() => setStudio({ mode: m.v })}
+                onClick={() => { setStudio({ mode: m.v }); if (m.v === "background" || m.v === "hybrid") window.setTimeout(addGradientAsLayerAsset, 0); }}
                 className={`rounded border px-1 py-1.5 text-[10px] font-medium ${
                   studio.mode === m.v ? "border-violet-500 bg-violet-500/20 text-violet-200" : "border-slate-700 bg-slate-800/40 text-slate-300"
                 }`}
