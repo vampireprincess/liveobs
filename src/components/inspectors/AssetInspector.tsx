@@ -26,17 +26,32 @@ export default function AssetInspector() {
     });
   };
 
+  const mediaRatio = (media?.width ?? a.width) / Math.max(1, media?.height ?? a.height);
+  const isMediaAsset = !a.shape && !!media;
+
   const canvasFill = (fit: AssetFit) => {
-    set({ x: 0, y: 0, width: W, height: H, fit });
+    if (!isMediaAsset) { set({ x: 0, y: 0, width: W, height: H, fit }); return; }
+    const containScale = Math.min(W / Math.max(1, media?.width ?? a.width), H / Math.max(1, media?.height ?? a.height));
+    const coverScale = Math.max(W / Math.max(1, media?.width ?? a.width), H / Math.max(1, media?.height ?? a.height));
+    const s = fit === "cover" || fit === "fill" ? coverScale : containScale;
+    const width = Math.round((media?.width ?? a.width) * s);
+    const height = Math.round((media?.height ?? a.height) * s);
+    set({ x: Math.round((W - width) / 2), y: Math.round((H - height) / 2), width, height, fit: fit === "fill" ? "cover" : fit });
+  };
+  const resizeByWidth = (width: number) => {
+    const nextW = Math.max(10, width);
+    set(isMediaAsset ? { width: nextW, height: Math.max(10, Math.round(nextW / mediaRatio)) } : { width: nextW });
+  };
+  const resizeByHeight = (height: number) => {
+    const nextH = Math.max(10, height);
+    set(isMediaAsset ? { height: nextH, width: Math.max(10, Math.round(nextH * mediaRatio)) } : { height: nextH });
   };
 
-  const mediaRatio = (media?.width ?? a.width) / Math.max(1, media?.height ?? a.height);
-
   const sizePresets: { label: string; apply: () => void }[] = [
-    { label: "Full canvas", apply: () => set({ x: 0, y: 0, width: W, height: H }) },
-    { label: "½ canvas", apply: () => set({ width: W / 2, height: H / 2 }) },
-    { label: "⅓ canvas", apply: () => set({ width: W / 3, height: H / 3 }) },
-    { label: "¼ canvas", apply: () => set({ width: W / 4, height: H / 4 }) },
+    { label: "Full canvas", apply: () => canvasFill("contain") },
+    { label: "½ canvas", apply: () => resizeByWidth(W / 2) },
+    { label: "⅓ canvas", apply: () => resizeByWidth(W / 3) },
+    { label: "¼ canvas", apply: () => resizeByWidth(W / 4) },
     {
       label: "Fit width",
       apply: () => set({ x: 0, width: W, height: Math.round(W / mediaRatio) }),
@@ -98,8 +113,8 @@ export default function AssetInspector() {
         <div className="grid grid-cols-4 gap-1.5">
           <Field label="X"><NumberInput value={a.x} onChange={(v) => set({ x: v })} /></Field>
           <Field label="Y"><NumberInput value={a.y} onChange={(v) => set({ y: v })} /></Field>
-          <Field label="W"><NumberInput value={a.width} onChange={(v) => set({ width: Math.max(10, v) })} /></Field>
-          <Field label="H"><NumberInput value={a.height} onChange={(v) => set({ height: Math.max(10, v) })} /></Field>
+          <Field label="W"><NumberInput value={a.width} onChange={resizeByWidth} /></Field>
+          <Field label="H"><NumberInput value={a.height} onChange={resizeByHeight} /></Field>
         </div>
         <Slider label="Rotation" min={-180} max={180} value={a.rotation} onChange={(v) => set({ rotation: v })} format={(v) => `${v}°`} />
         <Slider label="Opacity" min={0} max={1} step={0.05} value={a.opacity} onChange={(v) => set({ opacity: v })} format={(v) => `${Math.round(v * 100)}%`} />

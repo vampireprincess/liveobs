@@ -129,18 +129,32 @@ export class RuntimeEngine {
   spawnCounts: Record<string, { total: number; hour: number; day: number; week: number; lastHour: number; lastDay: number; lastWeek: number }> = {};
   dirState: Record<string, boolean> = {}; imgCache: Record<string, HTMLImageElement> = {};
   mediaInterval: Record<string, number> = {};
+  private timeScaleValue = 1;
+  private realBaseTime = 0;
+  private simBaseTime = 0;
 
   constructor(root: HTMLElement, data: ProjectData, opts: EngineOptions = {}) {
     this.root = root; this.data = data; this.opts = opts;
+    this.timeScaleValue = Math.max(0.1, opts.timeScale ?? (opts.simulateFast ? 10 : 1));
     this.mediaMap = Object.fromEntries(data.media.map((m) => [m.id, m.dataUrl]));
     this.build();
   }
 
-  private timeScale(): number { return Math.max(0.1, this.opts.timeScale ?? (this.opts.simulateFast ? 10 : 1)); }
-  private scaledNow(now = performance.now()): number { return this.startTime ? this.startTime + (now - this.startTime) * this.timeScale() : now; }
+  private timeScale(): number { return this.timeScaleValue; }
+  private scaledNow(now = performance.now()): number { return this.startTime ? this.simBaseTime + (now - this.realBaseTime) * this.timeScale() : now; }
   private scaledDate(now = performance.now()): Date { return new Date(Date.now() + (this.scaledNow(now) - now)); }
 
-  elapsedSec(): number { return this.startTime ? ((performance.now() - this.startTime) / 1000) * this.timeScale() : 0; }
+  setTimeScale(scale: number) {
+    const next = Math.max(0.1, scale || 1);
+    const now = performance.now();
+    this.simBaseTime = this.scaledNow(now);
+    this.realBaseTime = now;
+    this.timeScaleValue = next;
+    this.opts.timeScale = next;
+    if (this.running) { clearInterval(this.bgRotTimer); this.startBgRotation(); }
+  }
+
+  elapsedSec(): number { return this.startTime ? (this.scaledNow() - this.startTime) / 1000 : 0; }
 
   build() {
     this.root.innerHTML = "";
@@ -577,7 +591,7 @@ export class RuntimeEngine {
   };
 
   start() {
-    if (this.running) return; this.running = true; this.startTime = performance.now(); this.lastTs = 0;
+    if (this.running) return; this.running = true; this.startTime = performance.now(); this.realBaseTime = this.startTime; this.simBaseTime = this.startTime; this.lastTs = 0;
     this.raf = requestAnimationFrame(this.loop); this.scheduleGroups(); this.startBgRotation();
     if (this.data.audioReactive?.enabled) this.initAudio();
   }

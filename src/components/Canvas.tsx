@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useStore } from "../store";
-import type { CanvasAsset, MotionPath, Zone } from "../types";
+import type { CanvasAsset, MotionPath, Zone, RuntimePreviewSpeed, ProjectData } from "../types";
 import { RuntimeEngine, pathSvgD, behaviorTransform } from "../runtime/engine";
 import { uid, newShapeAsset } from "../factory";
 import EditorParticles from "./EditorParticles";
@@ -8,6 +8,22 @@ import CanvasToolsBar from "./CanvasToolsBar";
 import GradientBackgroundLayer from "./GradientBackgroundLayer";
 import CanvasToolbar from "./CanvasToolbar";
 import lottie from "lottie-web";
+
+const RUNTIME_SPEEDS: RuntimePreviewSpeed[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+function assetAspectRatio(a: CanvasAsset, data: ProjectData): number {
+  const media = a.mediaId ? data.media.find((m) => m.id === a.mediaId) : undefined;
+  const ratio = !a.shape && media?.width && media?.height ? media.width / Math.max(1, media.height) : a.width / Math.max(1, a.height);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+}
+
+function formatRuntimeTime(totalSeconds: number): string {
+  const total = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 type DragState =
   | { mode: "marquee"; sx: number; sy: number; cx: number; cy: number }
@@ -41,6 +57,7 @@ export default function Canvas() {
   const [scale, setScale] = useState(0.5);
   const [drag, setDrag] = useState<DragState>(null);
   const [snapLines, setSnapLines] = useState<{x?: number, y?: number}>({});
+  const [simulatedSeconds, setSimulatedSeconds] = useState(0);
   const dragRef = useRef<DragState>(null);
   dragRef.current = drag;
 
@@ -59,9 +76,25 @@ export default function Canvas() {
     if (runtimePreview) {
       const eng = new RuntimeEngine(runtimeRef.current, data, { editorMode: false, timeScale: runtimePreviewSpeed });
       engineRef.current = eng; eng.start(); (window as any).__engine = eng;
-      return () => { eng.destroy(); engineRef.current = null; };
+      setSimulatedSeconds(0);
+      return () => { eng.destroy(); engineRef.current = null; setSimulatedSeconds(0); };
     }
-  }, [runtimePreview, data, runtimePreviewSpeed]);
+  }, [runtimePreview, data]);
+
+  useEffect(() => {
+    engineRef.current?.setTimeScale(runtimePreviewSpeed);
+  }, [runtimePreviewSpeed]);
+
+  useEffect(() => {
+    if (!runtimePreview) return;
+    let raf = 0;
+    const tick = () => {
+      setSimulatedSeconds(engineRef.current?.elapsedSec() ?? 0);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [runtimePreview]);
 
   const toCanvas = useCallback((clientX: number, clientY: number) => {
     if (!stageRef.current) return { x: 0, y: 0 };
@@ -182,33 +215,38 @@ export default function Canvas() {
         } else { st.updateAsset(d.id, { x: d.ox + dx, y: d.oy + dy }); }
       } else if (d.mode === "resize") {
         let { ox, oy, ow, oh } = d; const dx = p.x - d.sx, dy = p.y - d.sy;
-        
-        // Lock aspect ratio by default for images to prevent empty space in bounding box
-        const asset = st.data()!.assets.find(a => a.id === d.id);
-        const isImage = asset && !asset.shape && asset.fit !== 'fill';
-        const lockRatio = e.shiftKey || isImage; // Always lock for images unless we add a specific unlock key
-        
-        if (d.handle.includes("e")) ow = Math.max(20, d.ow + dx); 
-        if (d.handle.includes("s")) oh = Math.max(20, d.oh + dy); 
-        if (d.handle.includes("w")) { ow = Math.max(20, d.ow - dx); ox = d.ox + dx; } 
-        if (d.handle.includes("n")) { oh = Math.max(20, d.oh - dy); oy = d.oy + dy; }
-        
-        if (lockRatio && d.ow > 0 && d.oh > 0) {
-          const ratio = d.ow / d.oh;
-          if (d.handle.length === 2) { // Corner resize
-             if (Math.abs(dx) > Math.abs(dy)) oh = ow / ratio; else ow = oh * ratio;
-             // Adjust position if resizing from top/left to keep opposite corner fixed
-             if (d.handle.includes("w")) ox = d.ox + (d.ow - ow);
-             if (d.handle.includes("n")) oy = d.oy + (d.oh - oh);
-          } else { // Edge resize - simpler to just adjust one dimension or expand both? Usually edge resize doesn't lock ratio well without jumping. Let's stick to corner locking or shift-lock.
-             // Actually, for edge resize with lock ratio, it's tricky. Let's just use shift for explicit lock.
-             if (e.shiftKey) {
-                if (d.handle.includes("e") || d.handle.includes("w")) oh = ow / ratio;
-                else ow = oh * ratio;
-             }
+        const curData = st.data()!;
+        const asset = curData.assets.find(a => a.id === d.id);
+        const lockRatio = !!asset && (!asset.shape || e.shiftKey);
+        const ratio = asset ? assetAspectRatio(asset, curData) : d.ow / Math.max(1, d.oh);
+        const minW = 20, minH = Math.max(20, minW / Math.max(0.01, ratio));
+
+        if (lockRatio) {
+          const fromW = d.handle.includes("e") || d.handle.includes("w");
+          const fromH = d.handle.includes("n") || d.handle.includes("s");
+          const signX = d.handle.includes("w") ? -1 : 1;
+          const signY = d.handle.includes("n") ? -1 : 1;
+          let nextW = d.ow;
+          let nextH = d.oh;
+
+          if (fromW && (!fromH || Math.abs(dx) >= Math.abs(dy))) {
+            nextW = Math.max(minW, d.ow + dx * signX);
+            nextH = nextW / ratio;
+          } else if (fromH) {
+            nextH = Math.max(minH, d.oh + dy * signY);
+            nextW = nextH * ratio;
           }
+
+          ow = nextW; oh = nextH;
+          if (d.handle.includes("w")) ox = d.ox + (d.ow - ow);
+          if (d.handle.includes("n")) oy = d.oy + (d.oh - oh);
+        } else {
+          if (d.handle.includes("e")) ow = Math.max(20, d.ow + dx);
+          if (d.handle.includes("s")) oh = Math.max(20, d.oh + dy);
+          if (d.handle.includes("w")) { ow = Math.max(20, d.ow - dx); ox = d.ox + (d.ow - ow); }
+          if (d.handle.includes("n")) { oh = Math.max(20, d.oh - dy); oy = d.oy + (d.oh - oh); }
         }
-        
+
         st.updateAsset(d.id, { x: ox, y: oy, width: ow, height: oh });
       } else if (d.mode === "rotate") {
         const ang = (Math.atan2(p.y - d.cy, p.x - d.cx) * 180) / Math.PI; let rot = d.oRot + (ang - d.startAngle);
@@ -264,20 +302,27 @@ export default function Canvas() {
       <CanvasToolbar selIds={selIds} assets={data.assets} W={W} H={H} />
       <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-md bg-slate-900/80 px-2 py-1 text-[11px] font-mono text-slate-400 backdrop-blur">{Math.round(scale * 100)}% · {W}×{H}</div>
       {runtimePreview && (
-        <div className="pointer-events-auto absolute right-3 top-3 z-40 flex items-center gap-1.5 rounded-md bg-emerald-900/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 backdrop-blur">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
-          <span className="ml-1 text-emerald-200/70">Speed</span>
-          {[1, 2, 3, 4].map((speed) => (
-            <button
-              key={speed}
-              type="button"
-              onClick={(e) => { e.stopPropagation(); useStore.getState().setRuntimePreviewSpeed(speed as 1 | 2 | 3 | 4); }}
-              className={`rounded px-1.5 py-0.5 text-[10px] ${runtimePreviewSpeed === speed ? "bg-emerald-400 text-emerald-950" : "bg-emerald-950/60 text-emerald-200 hover:bg-emerald-800"}`}
-              title={`Preview only: ${speed}x runtime speed`}
-            >
-              {speed}x
-            </button>
-          ))}
+        <div className="pointer-events-auto absolute right-3 top-3 z-40 rounded-md bg-emerald-900/70 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 backdrop-blur">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
+          </div>
+          <div className="flex max-w-[285px] flex-wrap items-center gap-1">
+            <span className="mr-1 text-emerald-200/70">Speed</span>
+            {RUNTIME_SPEEDS.map((speed) => (
+              <button
+                key={speed}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); useStore.getState().setRuntimePreviewSpeed(speed); }}
+                className={`rounded px-1.5 py-0.5 text-[10px] ${runtimePreviewSpeed === speed ? "bg-emerald-400 text-emerald-950" : "bg-emerald-950/60 text-emerald-200 hover:bg-emerald-800"}`}
+                title={`Preview only: ${speed}x runtime speed`}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 border-t border-emerald-700/50 pt-1 font-mono text-[12px] text-emerald-100">
+            Sim time: {formatRuntimeTime(simulatedSeconds)}
+          </div>
         </div>
       )}
       <div ref={stageRef} onPointerDown={onStageDown} className="relative origin-center shadow-2xl shadow-black/60" style={{ width: W, height: H, transform: `scale(${scale})`, background: data.bgColor, cursor: tool !== "select" ? "crosshair" : "default" }}>
