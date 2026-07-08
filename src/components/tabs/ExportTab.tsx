@@ -41,13 +41,7 @@ export default function ExportTab() {
   const known = SIZES.some((s) => s.value === sizeKey) ? sizeKey : "custom";
   const usedMediaIds = new Set(
     data.assets
-      .filter((a) => a.visible && data.layers.find((l) => l.id === a.layerId)?.visible !== false)
-      .filter((a) => {
-        if (a.layerId !== "layer-rand") return true;
-        const media = data.media.find((m) => m.id === a.mediaId);
-        const schedule: any = media?.schedule;
-        return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
-      })
+      .filter((a) => data.layers.find((l) => l.id === a.layerId)?.visible !== false && (a.visible || a.layerId === "layer-rand"))
       .map((a) => a.mediaId)
       .filter(Boolean)
   );
