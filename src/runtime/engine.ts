@@ -642,19 +642,25 @@ export class RuntimeEngine {
   }
 
   loop = (ts: number) => {
-    if (!this.running) return; const dt = this.lastTs ? Math.min(0.05, (ts - this.lastTs) / 1000) : 0.016; this.lastTs = ts;
-    const studio = this.data.gradientStudio, useStudioBg = studio && (studio.mode === "background" || studio.mode === "hybrid") && studio.gradient.stops.length;
-    const bgG = useStudioBg ? studio!.gradient : this.data.bgGradient?.enabled ? this.data.bgGradient : undefined;
-    if (bgG && bgG.animate) {
-      const anim = computeGradientAnim(bgG, this.elapsedSec()), animType = bgG.animType || (bgG.type === "linear" ? "rotation" : "hue");
-      if (animType === "panning") this.root.style.backgroundPosition = `${anim.panPercent}% 50%`;
-      else if (animType === "hue") this.renderBgGradient(bgG.angle, anim.hueShift);
-      else this.renderBgGradient(anim.angle);
+    if (!this.running) return;
+    try {
+      const dt = this.lastTs ? Math.min(0.05, (ts - this.lastTs) / 1000) : 0.016; this.lastTs = ts;
+      const studio = this.data.gradientStudio, useStudioBg = studio && (studio.mode === "background" || studio.mode === "hybrid") && studio.gradient.stops.length;
+      const bgG = useStudioBg ? studio!.gradient : this.data.bgGradient?.enabled ? this.data.bgGradient : undefined;
+      if (bgG && bgG.animate) {
+        const anim = computeGradientAnim(bgG, this.elapsedSec()), animType = bgG.animType || (bgG.type === "linear" ? "rotation" : "hue");
+        if (animType === "panning") this.root.style.backgroundPosition = `${anim.panPercent}% 50%`;
+        else if (animType === "hue") this.renderBgGradient(bgG.angle, anim.hueShift);
+        else this.renderBgGradient(anim.angle);
+      }
+      if (this.data.audioReactive?.enabled) this.updateAudio();
+      this.updateParticles(dt * this.timeScale()); this.updateEvents(ts); this.updateDayNight(this.scaledNow(ts));
+      this.checkMediaSpawns(ts);
+    } catch (err) {
+      console.error("Runtime loop error", err);
+    } finally {
+      this.raf = requestAnimationFrame(this.loop);
     }
-    if (this.data.audioReactive?.enabled) this.updateAudio();
-    this.updateParticles(dt * this.timeScale()); this.updateEvents(ts); this.updateDayNight(this.scaledNow(ts));
-    this.checkMediaSpawns(ts);
-    this.raf = requestAnimationFrame(this.loop);
   };
 
   start() {

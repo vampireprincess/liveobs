@@ -28,6 +28,7 @@ export default function LottieTab() {
   const animRef = useRef<AnimationItem | null>(null);
   const fullAnimRef = useRef<AnimationItem | null>(null);
   const scrubbingRef = useRef(false);
+  const segmentLoopActiveRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("Lottie animation");
@@ -36,6 +37,7 @@ export default function LottieTab() {
   const [colors, setColors] = useState<ColorHit[]>([]);
   const [map, setMap] = useState<Record<string, string>>({});
   const [playing, setPlaying] = useState(false);
+  const [fullPlaying, setFullPlaying] = useState(false);
   const [loopMode, setLoopMode] = useState<LoopMode>("loop");
   const [loopCount, setLoopCount] = useState(3);
   const [speed, setSpeed] = useState(1);
@@ -65,6 +67,7 @@ export default function LottieTab() {
     setMap(Object.fromEntries(hits.map((c) => [c.key, c.value])));
     setFrame(0);
     setPlaying(false);
+    setFullPlaying(false);
     setLoopFrom(Math.min(20, total - 1));
     setLoopTo(total);
     setSegmentSaved(false);
@@ -92,6 +95,7 @@ export default function LottieTab() {
     container.innerHTML = "";
     const anim = lottie.loadAnimation({ container, renderer: "svg", autoplay: false, loop: false, animationData: edited });
     anim.setSpeed(speed);
+    anim.setSubframe(true);
     configureBasicLoop(anim);
     anim.addEventListener("enterFrame", (ev: any) => { if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame); });
     anim.addEventListener("complete", () => { if (loopMode === "loop") anim.goToAndPlay(0, true); else setPlaying(false); });
@@ -116,11 +120,12 @@ export default function LottieTab() {
     const anim = lottie.loadAnimation({ container: fullRef.current, renderer: "svg", autoplay: false, loop: false, animationData: edited });
     fullAnimRef.current = anim;
     anim.setSpeed(speed);
+    anim.setSubframe(true);
     anim.addEventListener("enterFrame", (ev: any) => {
       if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame);
       const cur = ev.currentFrame;
       if (segmentFlow === "intro-loop" && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
-      if (segmentFlow === "loop-outro" && cur >= safeLoopTo && playing) anim.playSegments([safeLoopFrom, safeLoopTo], true);
+      if (segmentFlow === "loop-outro" && segmentLoopActiveRef.current && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
     });
     anim.addEventListener("DOMLoaded", () => anim.goToAndStop(frame, true));
     return () => { anim.destroy(); fullAnimRef.current = null; };
@@ -137,23 +142,30 @@ export default function LottieTab() {
     if (target === "main" || target === "both") animRef.current?.goToAndStop(next, true);
     if (target === "full" || target === "both") fullAnimRef.current?.goToAndStop(next, true);
     setPlaying(false);
+    setFullPlaying(false);
   };
 
   const togglePlayStop = (target: PlayerTarget = "main") => {
-    const isPlaying = target === "full" ? !fullAnimRef.current?.isPaused : playing;
-    if (isPlaying) {
-      if (target === "full") fullAnimRef.current?.pause();
-      else setPlaying(false);
+    if (target === "full") {
+      const shouldPlay = fullAnimRef.current?.isPaused ?? !fullPlaying;
+      setFullPlaying(shouldPlay);
+      if (shouldPlay) { segmentLoopActiveRef.current = false; if ((fullAnimRef.current?.currentFrame ?? 0) >= totalFrames - 1) fullAnimRef.current?.goToAndStop(0, true); fullAnimRef.current?.play(); }
+      else { segmentLoopActiveRef.current = false; fullAnimRef.current?.pause(); }
       return;
     }
-    if (target === "full") { setPlaying(true); fullAnimRef.current?.play(); }
-    else { setPlaying(true); animRef.current?.play(); }
+    const shouldPlay = animRef.current?.isPaused ?? !playing;
+    setPlaying(shouldPlay);
+    if (shouldPlay) { if ((animRef.current?.currentFrame ?? 0) >= totalFrames - 1) animRef.current?.goToAndStop(0, true); animRef.current?.play(); }
+    else animRef.current?.pause();
   };
+
+  const stepFrame = (delta: number) => seek(frame + delta, showSegmentPopup ? "full" : "main");
 
   const playSegmentPreview = () => {
     const anim = fullAnimRef.current;
     if (!anim) return;
-    setPlaying(true);
+    segmentLoopActiveRef.current = true;
+    setFullPlaying(true);
     if (segmentFlow === "intro-loop") anim.playSegments([[0, safeLoopFrom], [safeLoopFrom, safeLoopTo]], true);
     else anim.playSegments([safeLoopFrom, safeLoopTo], true);
   };
@@ -161,7 +173,8 @@ export default function LottieTab() {
   const playOutroOnce = () => {
     const anim = fullAnimRef.current;
     if (!anim) return;
-    setPlaying(true);
+    segmentLoopActiveRef.current = false;
+    setFullPlaying(true);
     anim.playSegments([safeLoopTo, totalFrames], true);
   };
 
@@ -196,7 +209,7 @@ export default function LottieTab() {
       max={totalFrames}
       step={1}
       value={frame}
-      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; if (target !== "full") animRef.current?.pause(); else fullAnimRef.current?.pause(); }}
+      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; segmentLoopActiveRef.current = false; setPlaying(false); setFullPlaying(false); if (target !== "full") animRef.current?.pause(); else fullAnimRef.current?.pause(); }}
       onPointerUp={(e) => { e.stopPropagation(); scrubbingRef.current = false; }}
       onPointerCancel={() => { scrubbingRef.current = false; }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -226,7 +239,7 @@ export default function LottieTab() {
           <div className="flex flex-wrap gap-1">{SPEEDS.map((s) => <button key={s} onClick={() => setSpeed(s)} className={`rounded px-2 py-1 text-[10px] ${speed === s ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{s}x</button>)}</div>
           <Field label="Loop mode"><Select<LoopMode> value={loopMode} onChange={setLoopMode} options={[{ value: "loop", label: "Loop forever" }, { value: "once", label: "No loop / play once" }, { value: "count", label: "Loop count" }]} /></Field>
           {loopMode === "count" && <Field label="How many loops"><NumberInput value={loopCount} onChange={setLoopCount} /></Field>}
-          <Btn className="w-full" onClick={() => setShowSegmentPopup(true)}>⛶ Fullscreen segment preview / loop setup</Btn>
+          <Btn className="w-full" onClick={() => setShowSegmentPopup(true)}>⛶ Fullscreen lottie timeline</Btn>
         </div>}
       </Panel>
 
@@ -239,7 +252,7 @@ export default function LottieTab() {
           <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
             <Timeline target="full" />
             <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-300"><span>Frame: <b>{frame}/{totalFrames}</b></span><span>Seconds: <b>{seconds.toFixed(2)}s</b></span><span>FPS: <b>{fps}</b></span></div>
-            <div className="mt-2 grid grid-cols-3 gap-2"><Btn variant="primary" onClick={() => togglePlayStop("full")}>{playing ? "⏸ Stop" : "▶ Play"}</Btn><Btn onClick={playSegmentPreview}>Play segment</Btn>{segmentFlow === "loop-outro" && <Btn onClick={playOutroOnce}>Play outro 1x</Btn>}</div>
+            <div className="mt-2 grid grid-cols-5 gap-2"><Btn onClick={() => stepFrame(-1)}>◀ Frame</Btn><Btn variant="primary" onClick={() => togglePlayStop("full")}>{fullPlaying ? "⏸ Stop" : "▶ Play"}</Btn><Btn onClick={() => stepFrame(1)}>Frame ▶</Btn><Btn onClick={playSegmentPreview}>Play segment</Btn>{segmentFlow === "loop-outro" && <Btn onClick={playOutroOnce}>Play outro 1x</Btn>}</div>
             <div className="mt-2 flex flex-wrap gap-1">{SPEEDS.map((s) => <button key={s} onClick={() => setSpeed(s)} className={`rounded px-2 py-1 text-[10px] ${speed === s ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{s}x</button>)}</div>
             <div className="mt-3 grid grid-cols-4 gap-2">
               <Field label="Segment style"><Select<SegmentFlow> value={segmentFlow} onChange={setSegmentFlow} options={[{ value: "intro-loop", label: "Intro then loop" }, { value: "loop-outro", label: "Loop then outro" }]} /></Field>

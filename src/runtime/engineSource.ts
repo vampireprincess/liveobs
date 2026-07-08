@@ -561,19 +561,23 @@ RuntimeEngine.prototype.startBgRotation=function(){
   this.bgRotTimer=setInterval(function(){ self.bgRotEls[self.bgRotIndex].style.opacity='0'; self.bgRotIndex=(self.bgRotIndex+1)%self.bgRotEls.length; self.bgRotEls[self.bgRotIndex].style.opacity='1'; },interval);
 };
 RuntimeEngine.prototype.loop=function(ts){
-  if(!this.running) return; var dt=this.lastTs?Math.min(0.05,(ts-this.lastTs)/1000):0.016; this.lastTs=ts;
-  var studio=this.data.gradientStudio, useStudioBg=studio&&(studio.mode==='background'||studio.mode==='hybrid')&&studio.gradient.stops.length;
-  var bgG=useStudioBg?studio.gradient:(this.data.bgGradient&&this.data.bgGradient.enabled?this.data.bgGradient:null);
-  if(bgG&&bgG.animate){
-    var anim=_computeGradAnim(bgG, this.elapsedSec()); var animType=bgG.animType||(bgG.type==='linear'?'rotation':'hue');
-    if(animType==='panning') this.root.style.backgroundPosition=anim.panPercent+'% 50%';
-    else if(animType==='hue') this.renderBgGradient(bgG.angle, anim.hueShift);
-    else this.renderBgGradient(anim.angle);
+  if(!this.running) return;
+  try{
+    var dt=this.lastTs?Math.min(0.05,(ts-this.lastTs)/1000):0.016; this.lastTs=ts;
+    var studio=this.data.gradientStudio, useStudioBg=studio&&(studio.mode==='background'||studio.mode==='hybrid')&&studio.gradient.stops.length;
+    var bgG=useStudioBg?studio.gradient:(this.data.bgGradient&&this.data.bgGradient.enabled?this.data.bgGradient:null);
+    if(bgG&&bgG.animate){
+      var anim=_computeGradAnim(bgG, this.elapsedSec()); var animType=bgG.animType||(bgG.type==='linear'?'rotation':'hue');
+      if(animType==='panning') this.root.style.backgroundPosition=anim.panPercent+'% 50%';
+      else if(animType==='hue') this.renderBgGradient(bgG.angle, anim.hueShift);
+      else this.renderBgGradient(anim.angle);
+    }
+    if(this.data.audioReactive&&this.data.audioReactive.enabled) this.updateAudio();
+    this.updateParticles(dt*this.timeScale()); this.updateEvents(ts); this.updateDayNight(this.scaledNow(ts));
+    this.checkMediaSpawns(ts);
+  }catch(e){console.error('Runtime loop error',e);}finally{
+    var self=this; this.raf=requestAnimationFrame(function(t){self.loop(t);});
   }
-  if(this.data.audioReactive&&this.data.audioReactive.enabled) this.updateAudio();
-  this.updateParticles(dt*this.timeScale()); this.updateEvents(ts); this.updateDayNight(this.scaledNow(ts));
-  this.checkMediaSpawns(ts);
-  var self=this; this.raf=requestAnimationFrame(function(t){self.loop(t);});
 };
 RuntimeEngine.prototype.updateAudio=function(){
   if(!this.analyser||!this.audioData)return; this.analyser.getByteFrequencyData(this.audioData);
