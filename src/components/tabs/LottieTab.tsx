@@ -8,6 +8,7 @@ import type { MediaAsset } from "../../types";
 
 type LoopMode = "loop" | "once" | "count";
 type SegmentFlow = "intro-loop" | "loop-outro";
+type PlayerTarget = "main" | "full" | "both";
 const SPEEDS = [0.5, 1, 1.5, 2, 2.5];
 
 function parseLottieDataUrl(dataUrl: string) {
@@ -26,6 +27,7 @@ export default function LottieTab() {
   const fullRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<AnimationItem | null>(null);
   const fullAnimRef = useRef<AnimationItem | null>(null);
+  const scrubbingRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("Lottie animation");
@@ -38,11 +40,11 @@ export default function LottieTab() {
   const [loopCount, setLoopCount] = useState(3);
   const [speed, setSpeed] = useState(1);
   const [frame, setFrame] = useState(0);
-  const [scrubbing, setScrubbing] = useState(false);
   const [showSegmentPopup, setShowSegmentPopup] = useState(false);
   const [segmentFlow, setSegmentFlow] = useState<SegmentFlow>("intro-loop");
   const [loopFrom, setLoopFrom] = useState(20);
   const [loopTo, setLoopTo] = useState(80);
+  const [segmentSaved, setSegmentSaved] = useState(false);
 
   const edited = json ? recolorLottie(json, map) : null;
   const totalFrames = Math.max(1, Math.round(edited?.op ?? 1));
@@ -65,6 +67,7 @@ export default function LottieTab() {
     setPlaying(false);
     setLoopFrom(Math.min(20, total - 1));
     setLoopTo(total);
+    setSegmentSaved(false);
   };
 
   const loadSelected = () => {
@@ -84,54 +87,37 @@ export default function LottieTab() {
     anim.loop = loopMode === "loop" ? true : loopMode === "once" ? false : Math.max(1, Math.round(loopCount)) as any;
   };
 
-  const buildAnim = (container: HTMLDivElement, full = false) => {
+  const buildMainAnim = (container: HTMLDivElement) => {
     if (!edited) return null;
     container.innerHTML = "";
     const anim = lottie.loadAnimation({ container, renderer: "svg", autoplay: false, loop: false, animationData: edited });
     anim.setSpeed(speed);
     configureBasicLoop(anim);
-    anim.addEventListener("enterFrame", (ev: any) => {
-      if (scrubbing) return;
-      const cur = ev.currentTime ?? anim.currentFrame;
-      syncFrame(cur);
-    });
-    anim.addEventListener("complete", () => {
-      if (loopMode === "loop") anim.goToAndPlay(0, true);
-      else setPlaying(false);
-    });
-    anim.addEventListener("DOMLoaded", () => {
-      anim.goToAndStop(clampFrame(frame, totalFrames), true);
-      if (playing && !full) anim.play();
-    });
+    anim.addEventListener("enterFrame", (ev: any) => { if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame); });
+    anim.addEventListener("complete", () => { if (loopMode === "loop") anim.goToAndPlay(0, true); else setPlaying(false); });
+    anim.addEventListener("DOMLoaded", () => anim.goToAndStop(clampFrame(frame, totalFrames), true));
     return anim;
   };
 
   useEffect(() => {
     if (!previewRef.current || !edited) return;
     animRef.current?.destroy();
-    const anim = buildAnim(previewRef.current);
-    animRef.current = anim;
-    return () => anim?.destroy();
+    animRef.current = buildMainAnim(previewRef.current);
+    return () => animRef.current?.destroy();
   }, [edited, loopMode, loopCount]);
 
-  useEffect(() => {
-    animRef.current?.setSpeed(speed);
-    fullAnimRef.current?.setSpeed(speed);
-  }, [speed]);
-
-  useEffect(() => {
-    if (playing) animRef.current?.play();
-    else animRef.current?.pause();
-  }, [playing]);
+  useEffect(() => { animRef.current?.setSpeed(speed); fullAnimRef.current?.setSpeed(speed); }, [speed]);
+  useEffect(() => { playing ? animRef.current?.play() : animRef.current?.pause(); }, [playing]);
 
   useEffect(() => {
     if (!showSegmentPopup || !fullRef.current || !edited) return;
     fullAnimRef.current?.destroy();
+    fullRef.current.innerHTML = "";
     const anim = lottie.loadAnimation({ container: fullRef.current, renderer: "svg", autoplay: false, loop: false, animationData: edited });
     fullAnimRef.current = anim;
     anim.setSpeed(speed);
     anim.addEventListener("enterFrame", (ev: any) => {
-      if (!scrubbing) syncFrame(ev.currentTime ?? anim.currentFrame);
+      if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame);
       const cur = ev.currentFrame;
       if (segmentFlow === "intro-loop" && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
       if (segmentFlow === "loop-outro" && cur >= safeLoopTo && playing) anim.playSegments([safeLoopFrom, safeLoopTo], true);
@@ -145,7 +131,7 @@ export default function LottieTab() {
     loadJson(JSON.parse(await file.text()), file.name.replace(/\.json$/i, ""));
   };
 
-  const seek = (f: number, target: "main" | "full" | "both" = "both") => {
+  const seek = (f: number, target: PlayerTarget = "both") => {
     const next = clampFrame(f, totalFrames);
     setFrame(next);
     if (target === "main" || target === "both") animRef.current?.goToAndStop(next, true);
@@ -153,16 +139,15 @@ export default function LottieTab() {
     setPlaying(false);
   };
 
-  const togglePlay = () => {
-    const next = !playing;
-    setPlaying(next);
-    if (next) animRef.current?.play();
-    else animRef.current?.pause();
-  };
-
-  const stop = () => {
-    setPlaying(false);
-    seek(0);
+  const togglePlayStop = (target: PlayerTarget = "main") => {
+    const isPlaying = target === "full" ? !fullAnimRef.current?.isPaused : playing;
+    if (isPlaying) {
+      if (target === "full") fullAnimRef.current?.pause();
+      else setPlaying(false);
+      return;
+    }
+    if (target === "full") { setPlaying(true); fullAnimRef.current?.play(); }
+    else { setPlaying(true); animRef.current?.play(); }
   };
 
   const playSegmentPreview = () => {
@@ -178,6 +163,13 @@ export default function LottieTab() {
     if (!anim) return;
     setPlaying(true);
     anim.playSegments([safeLoopTo, totalFrames], true);
+  };
+
+  const saveSegment = () => {
+    setLoopFrom(safeLoopFrom);
+    setLoopTo(safeLoopTo);
+    setSegmentSaved(true);
+    window.setTimeout(() => setSegmentSaved(false), 1500);
   };
 
   const saveToLibrary = (place = false) => {
@@ -197,18 +189,22 @@ export default function LottieTab() {
     }
   };
 
-  const Timeline = ({ target = "both" as "main" | "full" | "both" }) => (
+  const Timeline = ({ target = "both" as PlayerTarget }) => (
     <input
       type="range"
       min={0}
       max={totalFrames}
       step={1}
       value={frame}
-      onPointerDown={() => setScrubbing(true)}
-      onPointerUp={() => setScrubbing(false)}
+      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; if (target !== "full") animRef.current?.pause(); else fullAnimRef.current?.pause(); }}
+      onPointerUp={(e) => { e.stopPropagation(); scrubbingRef.current = false; }}
+      onPointerCancel={() => { scrubbingRef.current = false; }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       onChange={(e) => seek(parseFloat(e.target.value), target)}
       onInput={(e) => seek(parseFloat((e.target as HTMLInputElement).value), target)}
-      className="w-full accent-violet-500"
+      className="h-8 w-full cursor-pointer accent-violet-500"
+      style={{ pointerEvents: "auto" }}
     />
   );
 
@@ -226,7 +222,7 @@ export default function LottieTab() {
           <div ref={previewRef} className="flex aspect-video items-center justify-center overflow-hidden rounded-lg border border-slate-800 bg-black/30" />
           <Timeline />
           <div className="grid grid-cols-3 gap-1.5 text-[10px] text-slate-400"><span>Frame: <b className="text-slate-200">{frame}/{totalFrames}</b></span><span>Seconds: <b className="text-slate-200">{seconds.toFixed(2)}s</b></span><span>FPS: <b className="text-slate-200">{fps}</b></span></div>
-          <div className="grid grid-cols-2 gap-1.5"><Btn variant="primary" onClick={togglePlay}>{playing ? "⏸ Pause" : "▶ Play"}</Btn><Btn onClick={stop}>⏹ Stop</Btn></div>
+          <Btn variant="primary" className="w-full" onClick={() => togglePlayStop("main")}>{playing ? "⏸ Stop" : "▶ Play"}</Btn>
           <div className="flex flex-wrap gap-1">{SPEEDS.map((s) => <button key={s} onClick={() => setSpeed(s)} className={`rounded px-2 py-1 text-[10px] ${speed === s ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{s}x</button>)}</div>
           <Field label="Loop mode"><Select<LoopMode> value={loopMode} onChange={setLoopMode} options={[{ value: "loop", label: "Loop forever" }, { value: "once", label: "No loop / play once" }, { value: "count", label: "Loop count" }]} /></Field>
           {loopMode === "count" && <Field label="How many loops"><NumberInput value={loopCount} onChange={setLoopCount} /></Field>}
@@ -237,21 +233,21 @@ export default function LottieTab() {
       {json && <Panel title={`Lottie Colors (${colors.length})`} defaultCollapsed={false}>{!colors.length && <EmptyHint>No editable colors found.</EmptyHint>}<div className="space-y-1.5">{colors.map((c) => <div key={c.key} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-md bg-slate-800/40 p-1.5 text-xs"><span className="font-mono text-slate-300">{c.key}</span><span className="h-6 w-6 rounded border border-slate-700" style={{ background: c.key }} /><input type="color" value={map[c.key] ?? c.value} onChange={(e) => setMap((m) => ({ ...m, [c.key]: e.target.value }))} className="h-7 w-10 rounded" /></div>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><Btn onClick={() => setMap(Object.fromEntries(colors.map((c) => [c.key, c.key])))}>Reset colors</Btn><Btn variant="primary" onClick={() => saveToLibrary(false)}>{editingMediaId ? "Update asset" : "Save asset"}</Btn>{!editingMediaId && <Btn variant="primary" className="col-span-2" onClick={() => saveToLibrary(true)}>Save + place on canvas</Btn>}</div></Panel>}
 
       {showSegmentPopup && <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-5 backdrop-blur" onPointerDown={(e) => e.stopPropagation()}>
-        <div className="relative flex h-[90vh] w-[88vw] flex-col rounded-2xl border border-slate-700 bg-slate-950 p-4 shadow-2xl">
+        <div className="relative flex resize flex-col overflow-auto rounded-2xl border border-slate-700 bg-slate-950 p-4 shadow-2xl" style={{ width: "88vw", height: "90vh", minWidth: 520, minHeight: 520, maxWidth: "96vw", maxHeight: "96vh" }}>
           <button type="button" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSegmentPopup(false); }} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowSegmentPopup(false); }} className="absolute right-4 top-4 z-[10002] rounded bg-slate-800 px-3 py-1 text-sm text-white hover:bg-slate-700">✕ Close</button>
-          <div ref={fullRef} className="min-h-0 flex-1 overflow-hidden rounded-xl bg-black/40" />
+          <div ref={fullRef} className="min-h-[240px] flex-1 overflow-hidden rounded-xl bg-black/40" />
           <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
             <Timeline target="full" />
             <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-300"><span>Frame: <b>{frame}/{totalFrames}</b></span><span>Seconds: <b>{seconds.toFixed(2)}s</b></span><span>FPS: <b>{fps}</b></span></div>
-            <div className="mt-2 grid grid-cols-4 gap-2"><Btn variant="primary" onClick={playSegmentPreview}>▶ Play segment</Btn><Btn onClick={() => { fullAnimRef.current?.pause(); setPlaying(false); }}>⏸ Pause</Btn><Btn onClick={() => { fullAnimRef.current?.stop(); seek(0, "full"); }}>⏹ Stop</Btn>{segmentFlow === "loop-outro" && <Btn onClick={playOutroOnce}>Play outro 1x</Btn>}</div>
+            <div className="mt-2 grid grid-cols-3 gap-2"><Btn variant="primary" onClick={() => togglePlayStop("full")}>{playing ? "⏸ Stop" : "▶ Play"}</Btn><Btn onClick={playSegmentPreview}>Play segment</Btn>{segmentFlow === "loop-outro" && <Btn onClick={playOutroOnce}>Play outro 1x</Btn>}</div>
             <div className="mt-2 flex flex-wrap gap-1">{SPEEDS.map((s) => <button key={s} onClick={() => setSpeed(s)} className={`rounded px-2 py-1 text-[10px] ${speed === s ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{s}x</button>)}</div>
             <div className="mt-3 grid grid-cols-4 gap-2">
               <Field label="Segment style"><Select<SegmentFlow> value={segmentFlow} onChange={setSegmentFlow} options={[{ value: "intro-loop", label: "Intro then loop" }, { value: "loop-outro", label: "Loop then outro" }]} /></Field>
-              <Field label="Loop from"><NumberInput value={loopFrom} onChange={(v) => setLoopFrom(clampFrame(v, totalFrames))} /></Field>
-              <Field label="Loop to"><NumberInput value={loopTo} onChange={(v) => setLoopTo(clampFrame(v, totalFrames))} /></Field>
+              <Field label="Loop from"><NumberInput value={loopFrom} onChange={(v) => { setLoopFrom(clampFrame(v, totalFrames)); setSegmentSaved(false); }} /></Field>
+              <Field label="Loop to"><NumberInput value={loopTo} onChange={(v) => { setLoopTo(clampFrame(v, totalFrames)); setSegmentSaved(false); }} /></Field>
               <Field label="Current frame"><NumberInput value={frame} onChange={(v) => seek(v, "full")} /></Field>
             </div>
-            <div className="mt-2 grid grid-cols-3 gap-2"><Btn onClick={() => setLoopFrom(frame)}>Set current → Loop from</Btn><Btn onClick={() => setLoopTo(frame)}>Set current → Loop to</Btn><Btn onClick={() => { setLoopFrom(frame); setLoopTo(totalFrames); }}>Current → loop start to end</Btn></div>
+            <div className="mt-2 grid grid-cols-4 gap-2"><Btn onClick={() => { setLoopFrom(frame); setSegmentSaved(false); }}>Set current → Loop from</Btn><Btn onClick={() => { setLoopTo(frame); setSegmentSaved(false); }}>Set current → Loop to</Btn><Btn onClick={() => { setLoopFrom(frame); setLoopTo(totalFrames); setSegmentSaved(false); }}>Current → loop start to end</Btn><Btn variant="primary" onClick={saveSegment}>{segmentSaved ? "✓ Saved" : "Save segment"}</Btn></div>
             <p className="mt-2 text-[10px] text-amber-300/80">Experimental: this loops a full Lottie frame segment. Independent still+loop per object requires the Lottie to be authored as separate layers/precomps.</p>
           </div>
         </div>

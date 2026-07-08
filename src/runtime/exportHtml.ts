@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import type { Project } from "../types";
 import { RUNTIME_ENGINE_SRC } from "./engineSource";
+import LOTTIE_WEB_SRC from "lottie-web/build/player/lottie.min.js?raw";
 
 // Build a standalone HTML string that runs the scene in OBS Browser Source.
 // Everything (data + engine) is embedded — no server, no API, no editor UI.
@@ -19,7 +20,9 @@ export function buildRuntimeHtml(project: Project): string {
   #stage{transform-origin:center center;}
   img,video{-webkit-user-drag:none;user-select:none;}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<script>
+${LOTTIE_WEB_SRC}
+</script>
 </head>
 <body>
 <div id="stage-wrap"><div id="stage"></div></div>
