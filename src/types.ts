@@ -284,6 +284,6 @@ export interface Project {
   data: ProjectData;
 }
 
-export type EditorTab = "assets" | "layers" | "random" | "paths" | "zones" | "particles" | "gradient" | "audio" | "debug" | "export";
+export type EditorTab = "assets" | "layers" | "random" | "paths" | "zones" | "particles" | "lottie" | "svg" | "gradient" | "audio" | "debug" | "export";
 
 export type CanvasTool = "select" | "path" | "zone-rect" | "zone-ellipse" | "zone-poly" | "zone-triangle" | "shape-rect" | "shape-ellipse" | "shape-triangle" | "shape-line";
