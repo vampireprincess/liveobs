@@ -138,14 +138,20 @@ function RuntimeEngine(root, data, opts){
   this.imgCache={}; this.dirState={}; this.bgRotEls=[]; this.bgRotIndex=0; this.running=false; this.lastTs=0;
   this.startTime=0; this.audioLevel=0;
   this.spawnCounts={}; this.mediaTimers={}; this.mediaNextSpawnAt={}; this.mediaInterval={};
+  this.timeScaleValue=Math.max(0.1, this.opts.timeScale || (this.opts.simulateFast ? 10 : 1)); this.realBaseTime=0; this.simBaseTime=0;
   this.build();
 }
-RuntimeEngine.prototype.timeScale=function(){ return Math.max(0.1, this.opts.timeScale || (this.opts.simulateFast ? 10 : 1)); };
-RuntimeEngine.prototype.scaledNow=function(now){ now = now || performance.now(); return this.startTime ? this.startTime + (now - this.startTime) * this.timeScale() : now; };
+RuntimeEngine.prototype.timeScale=function(){ return this.timeScaleValue; };
+RuntimeEngine.prototype.scaledNow=function(now){ now = now || performance.now(); return this.startTime ? this.simBaseTime + (now - this.realBaseTime) * this.timeScale() : now; };
 RuntimeEngine.prototype.scaledDate=function(now){ now = now || performance.now(); return new Date(Date.now() + (this.scaledNow(now) - now)); };
+RuntimeEngine.prototype.setTimeScale=function(scale){
+  var next=Math.max(0.1, scale || 1); var now=performance.now();
+  this.simBaseTime=this.scaledNow(now); this.realBaseTime=now; this.timeScaleValue=next; this.opts.timeScale=next;
+  if(this.running){ clearInterval(this.bgRotTimer); this.startBgRotation(); }
+};
 RuntimeEngine.prototype.elapsedSec=function(){
   if(!this.startTime) return 0;
-  return ((performance.now()-this.startTime)/1000) * this.timeScale();
+  return (this.scaledNow()-this.startTime)/1000;
 };
 RuntimeEngine.prototype.build=function(){
   var d=this.data, root=this.root, self=this;
@@ -528,7 +534,7 @@ RuntimeEngine.prototype.initAudio=function(){
   }).catch(function(e){console.warn('Mic denied',e);});
 };
 RuntimeEngine.prototype.start=function(){
-  if(this.running) return; this.running=true; this.startTime=performance.now(); this.lastTs=0;
+  if(this.running) return; this.running=true; this.startTime=performance.now(); this.realBaseTime=this.startTime; this.simBaseTime=this.startTime; this.lastTs=0;
   var self=this; this.raf=requestAnimationFrame(function(t){self.loop(t);});
   this.scheduleGroups(); this.startBgRotation();
   if(this.data.audioReactive&&this.data.audioReactive.enabled) this.initAudio();

@@ -8,23 +8,23 @@ interface Props {
   H: number;
 }
 
-// Floating toolbar that appears above the canvas when 2+ assets are selected.
-// Supports alignment, distribution, multi-resize, and multi-rotation.
+// Floating toolbar that appears above the canvas when one or more assets are selected.
+// Canvas alignment works for a single asset; group align/distribution appears for multi-select.
 export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
-  if (selIds.length < 2) return null;
-
-  const sel = assets.filter((a) => selIds.includes(a.id));
+  const sel = assets.filter((a) => selIds.includes(a.id) && !a.locked);
   if (!sel.length) return null;
 
   const applyAlign = (mode: string) => {
     const st = useStore.getState();
     // Use props selIds — guaranteed current, unlike store.selIds which may be stale on click
     const ids = selIds;
-    if (ids.length < 2) return;
 
     st.update((d) => {
       const targets = d.assets.filter((a) => ids.includes(a.id) && !a.locked);
       if (targets.length === 0) return;
+
+      const isCanvasAlign = mode.startsWith("canvas-");
+      if (!isCanvasAlign && targets.length < 2) return;
 
       const tMinX = Math.min(...targets.map((a) => a.x));
       const tMinY = Math.min(...targets.map((a) => a.y));
@@ -105,6 +105,7 @@ export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
 
   return (
     <div className="pointer-events-auto absolute left-1/2 bottom-4 z-[70] -translate-x-1/2 flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur">
+      {sel.length >= 2 && (
       <div className="flex items-center gap-0.5 px-1.5">
         <Btn title="Align Left" onClick={() => applyAlign("left")}><AlignIcon type="left" /></Btn>
         <Btn title="Align Center H" onClick={() => applyAlign("hcenter")}><AlignIcon type="hcenter" /></Btn>
@@ -114,7 +115,8 @@ export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
         <Btn title="Align Center V" onClick={() => applyAlign("vcenter")}><AlignIcon type="vcenter" /></Btn>
         <Btn title="Align Bottom" onClick={() => applyAlign("bottom")}><AlignIcon type="bottom" /></Btn>
       </div>
-      <div className="mx-1 h-6 w-px bg-slate-700" />
+      )}
+      {sel.length >= 2 && <div className="mx-1 h-6 w-px bg-slate-700" />}
       <div className="flex items-center gap-0.5 px-1.5">
         <Btn title="To Canvas Left" onClick={() => applyAlign("canvas-left")}><AlignIcon type="left" /></Btn>
         <Btn title="To Canvas Center H" onClick={() => applyAlign("canvas-hcenter")}><AlignIcon type="hcenter" /></Btn>
