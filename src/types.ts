@@ -33,7 +33,9 @@ export interface AssetCategory {
   excludeZoneIds?: string[];
 }
 
-export type BehaviorAnimation = "none" | "pendulum" | "rotation" | "shake" | "wiggle" | "float" | "pulse" | "bounce" | "skew" | "blur";
+export type BehaviorAnimation = "none" | "pendulum" | "rotation" | "shake" | "wiggle" | "float" | "pulse" | "bounce" | "skew" | "blur" | "heartbeat" | "sway" | "jelly" | "breathe" | "drift" | "glitch" | "orbit" | "tada";
+export type OneShotAnimation = "none" | "fade" | "scale" | "slide-up" | "slide-down" | "slide-left" | "slide-right" | "pop" | "spin";
+export type PathEasing = "linear" | "ease-in" | "ease-out" | "ease-in-out" | "smoothstep" | "sine" | "bounce";
 
 export interface AssetSchedule {
   spawnMode: "static" | "path";
@@ -129,6 +131,10 @@ export interface CanvasAsset {
   shadow?: DropShadow;
   animation?: BehaviorAnimation;
   animSpeed?: number;
+  entranceAnim?: OneShotAnimation;
+  entranceDuration?: number;
+  exitAnim?: OneShotAnimation;
+  exitDuration?: number;
   refPointX?: number;
   refPointY?: number;
 }
@@ -158,6 +164,7 @@ export interface MotionPath {
   closed: boolean;
   color: string;
   mode?: PathMode;
+  easing?: PathEasing;
 }
 
 export type ZoneShape = "rect" | "ellipse" | "polygon" | "triangle";

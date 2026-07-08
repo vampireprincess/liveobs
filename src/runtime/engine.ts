@@ -3,10 +3,10 @@
 // day/night cycle and background rotation. Used by both the live preview and
 // the exported standalone HTML. Zero dependencies, no network.
 import type { ProjectData, MotionPath, Zone, ParticleSystem, GradientConfig, FlipAxis } from "../types";
-import { sampleGradientColor, shiftHue, computeGradientAnim, gradientCss, behaviorTransform } from "../gradientMath";
+import { sampleGradientColor, shiftHue, computeGradientAnim, gradientCss, behaviorTransform, oneShotTransform } from "../gradientMath";
 import lottie from "lottie-web";
 
-export { sampleGradientColor as sampleStops, shiftHue, behaviorTransform };
+export { sampleGradientColor as sampleStops, shiftHue, behaviorTransform, oneShotTransform };
 
 export interface EngineOptions {
   editorMode?: boolean;
@@ -23,6 +23,8 @@ interface ActiveEvent {
   flipAxis: FlipAxis | null;
   exclIds: string[];
   rotateAlongPath?: boolean;
+  easing?: string;
+  template?: Partial<import("../types").CanvasAsset>;
 }
 
 interface Particle {
@@ -74,6 +76,23 @@ export function samplePath(path: MotionPath, segments = 48): { x: number; y: num
   const last = list[list.length - 1];
   out.push({ x: last.x, y: last.y });
   return out;
+}
+
+export function ease01(t: number, easing?: string): number {
+  const x = Math.max(0, Math.min(1, t));
+  if (easing === "ease-in") return x * x;
+  if (easing === "ease-out") return 1 - (1 - x) * (1 - x);
+  if (easing === "ease-in-out") return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  if (easing === "smoothstep") return x * x * (3 - 2 * x);
+  if (easing === "sine") return -(Math.cos(Math.PI * x) - 1) / 2;
+  if (easing === "bounce") {
+    const n1 = 7.5625, d1 = 2.75;
+    if (x < 1 / d1) return n1 * x * x;
+    if (x < 2 / d1) { const y = x - 1.5 / d1; return n1 * y * y + 0.75; }
+    if (x < 2.5 / d1) { const y = x - 2.25 / d1; return n1 * y * y + 0.9375; }
+    const y = x - 2.625 / d1; return n1 * y * y + 0.984375;
+  }
+  return x;
 }
 
 export function pathSvgD(path: MotionPath): string {
@@ -515,8 +534,10 @@ export class RuntimeEngine {
     
     const layerEl = this.layerEls[cat?.layerId || "layer-rand"] || this.root;
     const el = document.createElement("div");
-    el.style.position = "absolute"; el.style.width = w + "px"; el.style.height = h + "px"; el.style.willChange = "transform";
-    el.style.zIndex = "100";
+    el.style.position = "absolute"; el.style.width = w + "px"; el.style.height = h + "px"; el.style.willChange = "transform, opacity, filter";
+    el.style.zIndex = String(templateAsset?.zoffset ?? 100);
+    el.style.opacity = String(templateAsset?.opacity ?? 1);
+    el.style.mixBlendMode = templateAsset?.blend === "add" ? "plus-lighter" : (templateAsset?.blend || "normal");
     
     const shouldFlip = cat?.flipOnDirection && !ltr;
     const flipAxis: FlipAxis | null = shouldFlip ? (cat?.flipAxis || "horizontal") : null;
@@ -559,32 +580,46 @@ export class RuntimeEngine {
       path: poly, 
       flipAxis,
       exclIds: [],
-      rotateAlongPath: cat?.rotateAlongPath 
+      rotateAlongPath: cat?.rotateAlongPath,
+      easing: path?.easing,
+      template: templateAsset ? structuredClone(templateAsset) : undefined,
     });
   }
 
   updateEvents(now: number) {
     const scaledNow = this.scaledNow(now);
     for (let i = this.activeEvents.length - 1; i >= 0; i--) {
-      const ev = this.activeEvents[i]; const t = (scaledNow - ev.start) / ev.duration;
-      if (t >= 1) { ev.el.remove(); this.activeEvents.splice(i, 1); continue; }
+      const ev = this.activeEvents[i]; const rawT = (scaledNow - ev.start) / ev.duration;
+      if (rawT >= 1) { ev.el.remove(); this.activeEvents.splice(i, 1); continue; }
+      const t = ease01(rawT, ev.easing);
       const seg = t * (ev.path.length - 1), idx = Math.floor(seg), frac = seg - idx, a = ev.path[idx], b = ev.path[Math.min(idx + 1, ev.path.length - 1)];
       const x = a.x + (b.x - a.x) * frac, y = a.y + (b.y - a.y) * frac, w = parseFloat(ev.el.style.width), h = parseFloat(ev.el.style.height);
       
+      const tmpl = ev.template;
+      const baseSX = tmpl?.flipH ? -(tmpl.scale ?? 1) : (tmpl?.scale ?? 1);
+      const baseSY = tmpl?.flipV ? -(tmpl.scale ?? 1) : (tmpl?.scale ?? 1);
+      const behavior = behaviorTransform(tmpl?.animation, (scaledNow - ev.start) / 1000, tmpl?.animSpeed ?? 1, tmpl?.rotation ?? 0, baseSX, baseSY);
+      let oneShot = { transform: "", opacity: 1 };
+      const enterDur = (tmpl?.entranceDuration ?? 0.6) * 1000;
+      const exitDur = (tmpl?.exitDuration ?? 0.6) * 1000;
+      if (tmpl?.entranceAnim && tmpl.entranceAnim !== "none" && scaledNow - ev.start < enterDur) oneShot = oneShotTransform(tmpl.entranceAnim, (scaledNow - ev.start) / enterDur, true);
+      if (tmpl?.exitAnim && tmpl.exitAnim !== "none" && ev.start + ev.duration - scaledNow < exitDur) oneShot = oneShotTransform(tmpl.exitAnim, 1 - ((ev.start + ev.duration - scaledNow) / exitDur), false);
+
       let transform = `translate(${x - w / 2}px, ${y - h / 2}px)`;
       if (ev.rotateAlongPath) {
         const angle = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
         transform += ` rotate(${angle}deg)`;
       }
-      if (ev.flipAxis === "horizontal") {
-        transform += ` scaleX(-1)`;
-      } else if (ev.flipAxis === "vertical") {
-        transform += ` scaleY(-1)`;
-      } else if (ev.flipAxis === "both") {
-        transform += ` scale(-1, -1)`;
+      if (!tmpl) {
+        if (ev.flipAxis === "horizontal") transform += ` scaleX(-1)`;
+        else if (ev.flipAxis === "vertical") transform += ` scaleY(-1)`;
+        else if (ev.flipAxis === "both") transform += ` scale(-1, -1)`;
       }
-      
+      transform += ` ${behavior.transform} ${oneShot.transform}`;
       ev.el.style.transform = transform;
+      ev.el.style.opacity = String((tmpl?.opacity ?? 1) * oneShot.opacity);
+      const shadow = tmpl?.shadow?.enabled ? `drop-shadow(${tmpl.shadow.offsetX}px ${tmpl.shadow.offsetY}px ${tmpl.shadow.blur}px ${tmpl.shadow.color})` : "";
+      ev.el.style.filter = [shadow, behavior.filter].filter(Boolean).join(" ");
       if (ev.exclIds.length) ev.el.style.visibility = allowedByZones(x, y, this.data.zones, [], ev.exclIds) ? "visible" : "hidden";
     }
   }

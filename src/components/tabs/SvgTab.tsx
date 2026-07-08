@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { uid, newCanvasAsset, defaultSchedule } from "../../factory";
 import { useStore } from "../../store";
 import { Btn, EmptyHint, Field, Panel } from "../ui";
@@ -21,36 +21,44 @@ function svgSize(svg: string) {
 export default function SvgTab() {
   const data = useStore((s) => s.data())!;
   const fileRef = useRef<HTMLInputElement>(null);
+  const selId = useStore((s) => s.selId);
   const [name, setName] = useState("SVG asset");
   const [svg, setSvg] = useState("");
   const [colors, setColors] = useState<ColorHit[]>([]);
   const [map, setMap] = useState<Record<string, string>>({});
+  const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
   const edited = useMemo(() => (svg ? recolorSvg(svg, map) : ""), [svg, map]);
+
+  const loadSvg = (text: string, nextName: string, mediaId: string | null = null) => {
+    setName(nextName); setSvg(text); setEditingMediaId(mediaId);
+    const hits = extractSvgColors(text); setColors(hits); setMap(Object.fromEntries(hits.map((c) => [c.key, c.value])));
+  };
 
   const loadFile = async (file?: File) => {
     if (!file) return;
-    const text = await file.text();
-    setName(file.name.replace(/\.svg$/i, ""));
-    setSvg(text);
-    const hits = extractSvgColors(text);
-    setColors(hits);
-    setMap(Object.fromEntries(hits.map((c) => [c.key, c.value])));
+    loadSvg(await file.text(), file.name.replace(/\.svg$/i, ""));
   };
+
+  const loadSelected = () => {
+    const asset = data.assets.find((a) => a.id === selId);
+    const media = asset?.mediaId ? data.media.find((m) => m.id === asset.mediaId) : undefined;
+    if (!media || media.type !== "svg") return;
+    const text = media.dataUrl.startsWith("data:") ? new TextDecoder().decode(Uint8Array.from(atob(media.dataUrl.split(",")[1]), c => c.charCodeAt(0))) : media.dataUrl;
+    loadSvg(text, media.name, media.id);
+  };
+
+  useEffect(() => {
+    const asset = data.assets.find((a) => a.id === selId);
+    const media = asset?.mediaId ? data.media.find((m) => m.id === asset.mediaId) : undefined;
+    if (media?.type === "svg" && !svg) loadSelected();
+  }, [selId]);
 
   const saveToLibrary = (place = false) => {
     if (!edited) return;
     const size = svgSize(edited);
-    const media: MediaAsset = {
-      id: uid(),
-      name,
-      type: "svg",
-      dataUrl: toDataUrl("image/svg+xml", edited),
-      width: size.width,
-      height: size.height,
-      categoryId: "static-assets",
-      schedule: defaultSchedule(),
-      inLibrary: false,
-    };
+    const patch = { name, dataUrl: toDataUrl("image/svg+xml", edited), width: size.width, height: size.height };
+    if (editingMediaId) { useStore.getState().update((d) => { const m = d.media.find((x) => x.id === editingMediaId); if (m) Object.assign(m, patch); }); return; }
+    const media: MediaAsset = { id: uid(), name, type: "svg", dataUrl: patch.dataUrl, width: size.width, height: size.height, categoryId: "static-assets", schedule: defaultSchedule(), inLibrary: false };
     useStore.getState().addMedia(media);
     if (place) {
       const layer = data.layers.find((l) => l.id === "layer-mid") ?? data.layers[0];
@@ -64,7 +72,7 @@ export default function SvgTab() {
     <div className="space-y-2">
       <Panel title="SVG Import + Editor">
         <input ref={fileRef} type="file" accept=".svg,image/svg+xml" hidden onChange={(e) => loadFile(e.target.files?.[0])} />
-        <Btn variant="primary" className="w-full" onClick={() => fileRef.current?.click()}>⬆ Import SVG</Btn>
+        <div className="grid grid-cols-2 gap-1.5"><Btn variant="primary" onClick={() => fileRef.current?.click()}>⬆ Import SVG</Btn><Btn onClick={loadSelected}>Load selected</Btn></div>
         {!svg && <EmptyHint>Import an SVG to preview, extract colors, and recolor it.</EmptyHint>}
         {svg && (
           <div className="space-y-2 pt-2">
@@ -90,8 +98,8 @@ export default function SvgTab() {
           </div>
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             <Btn onClick={() => setMap(Object.fromEntries(colors.map((c) => [c.key, c.key])))}>Reset colors</Btn>
-            <Btn variant="primary" onClick={() => saveToLibrary(false)}>Save asset</Btn>
-            <Btn variant="primary" className="col-span-2" onClick={() => saveToLibrary(true)}>Save + place on canvas</Btn>
+            <Btn variant="primary" onClick={() => saveToLibrary(false)}>{editingMediaId ? "Update asset" : "Save asset"}</Btn>
+            {!editingMediaId && <Btn variant="primary" className="col-span-2" onClick={() => saveToLibrary(true)}>Save + place on canvas</Btn>}
           </div>
         </Panel>
       )}
