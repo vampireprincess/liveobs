@@ -14,6 +14,19 @@ import {
 } from "../../paletteUtils";
 
 // Direction presets that map to gradient type+angle
+const MODERN_PRESETS: { name: string; colors: string[]; type?: GradientConfig["type"]; angle?: number }[] = [
+  { name: "Aurora", colors: ["#22d3ee", "#a855f7", "#f472b6"], angle: 135 },
+  { name: "Sunset", colors: ["#f97316", "#ec4899", "#7c3aed"], angle: 45 },
+  { name: "Cyber", colors: ["#00f5ff", "#0614ff", "#ff00e5"], angle: 120 },
+  { name: "Mint", colors: ["#d9f99d", "#34d399", "#0f766e"], angle: 90 },
+  { name: "Fire", colors: ["#7f1d1d", "#ef4444", "#facc15"], angle: 35 },
+  { name: "Ocean", colors: ["#020617", "#0369a1", "#67e8f9"], angle: 160 },
+  { name: "Peach", colors: ["#fff7ed", "#fdba74", "#fb7185"], angle: 70 },
+  { name: "Galaxy", colors: ["#0f172a", "#4c1d95", "#db2777", "#fde68a"], type: "radial" },
+  { name: "Lime", colors: ["#1a2e05", "#65a30d", "#ecfccb"], angle: 110 },
+  { name: "Ice", colors: ["#e0f2fe", "#38bdf8", "#312e81"], angle: 180 },
+];
+
 const DIRECTIONS: { type: GradientConfig["type"]; angle: number }[] = [
   { type: "linear", angle: 0 },
   { type: "linear", angle: 45 },
@@ -87,8 +100,15 @@ export default function GradientTab() {
   const setGrad = (patch: Partial<GradientConfig>) =>
     upd((d) => {
       const cur = d.gradientStudio ?? studio;
-      d.gradientStudio = { ...cur, gradient: { ...cur.gradient, ...patch } };
+      const nextGradient = { ...cur.gradient, ...patch };
+      d.gradientStudio = { ...cur, gradient: nextGradient };
+      d.assets.forEach((a) => { if (a.gradient) a.gradient = structuredClone(nextGradient); });
     });
+
+  const applyModernPreset = (preset: typeof MODERN_PRESETS[number]) => {
+    const stops = preset.colors.map((color, i) => ({ id: uid(), color, offset: preset.colors.length === 1 ? 0 : i / (preset.colors.length - 1) }));
+    setGrad({ stops, type: preset.type ?? "linear", angle: preset.angle ?? g.angle });
+  };
 
   const addGradientAsLayerAsset = () => {
     const css = getGradientCss(g);
@@ -277,6 +297,20 @@ export default function GradientTab() {
       <Panel title="🌈 Gradient Studio">
         {/* live, real-time animated preview */}
         <LiveGradientPreview g={g} />
+        <div>
+          <div className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Modern presets</div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {MODERN_PRESETS.map((preset) => (
+              <button
+                key={preset.name}
+                title={preset.name}
+                onClick={() => applyModernPreset(preset)}
+                className="aspect-square rounded-md border border-slate-700 hover:border-violet-400"
+                style={{ background: preset.type === "radial" ? `radial-gradient(circle, ${preset.colors.join(", ")})` : `linear-gradient(${preset.angle ?? 135}deg, ${preset.colors.join(", ")})` }}
+              />
+            ))}
+          </div>
+        </div>
         <Btn className="w-full" onClick={addGradientAsLayerAsset}>➕ Add current gradient as canvas layer asset</Btn>
         <p className="text-[10px] text-slate-500">Creates a full-canvas gradient layer asset, so you can reorder it with images and use opacity/blend mode in the Asset Inspector.</p>
 

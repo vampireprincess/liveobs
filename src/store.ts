@@ -150,6 +150,8 @@ export const useStore = create<AppState>((set, get) => {
         ...p,
         data: {
           ...p.data,
+          canvasWidth: (p.data.canvasWidth ?? 1920) < 1000 ? 1920 : (p.data.canvasWidth ?? 1920),
+          canvasHeight: (p.data.canvasHeight ?? 1080) < 600 ? 1080 : (p.data.canvasHeight ?? 1080),
           categories: (p.data.categories ?? createProject().data.categories).map(c => ({
             ...c,
             flipAxis: c.flipAxis ?? "horizontal",

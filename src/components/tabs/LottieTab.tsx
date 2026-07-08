@@ -118,7 +118,7 @@ export default function LottieTab() {
 
   useEffect(() => { animRef.current?.setSpeed(speed); fullAnimRef.current?.setSpeed(speed); }, [speed]);
   useEffect(() => { playing ? animRef.current?.play() : animRef.current?.pause(); }, [playing]);
-  useEffect(() => { fullFrameRef.current = frame; }, [frame]);
+  useEffect(() => { if (fullPlaybackModeRef.current === "none") fullFrameRef.current = frame; }, [frame]);
 
   const stopFullPlayback = () => {
     if (fullRafRef.current !== null) cancelAnimationFrame(fullRafRef.current);
@@ -150,9 +150,9 @@ export default function LottieTab() {
       let next = fullFrameRef.current + dt * fps * speed;
       if (mode === "segment") {
         const length = Math.max(1, safeLoopTo - safeLoopFrom);
-        if (next >= safeLoopTo - 0.01) next = safeLoopFrom + ((next - safeLoopFrom) % length);
-      } else if (next >= totalFrames - 0.01) {
-        next = next % totalFrames;
+        if (next >= safeLoopTo - 1) next = safeLoopFrom + ((next - safeLoopFrom) % length);
+      } else if (next >= totalFrames - 1) {
+        next = next % Math.max(1, totalFrames - 1);
       }
       fullFrameRef.current = next;
       setFrame(Math.floor(next));
