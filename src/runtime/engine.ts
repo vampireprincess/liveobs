@@ -175,7 +175,7 @@ export class RuntimeEngine {
   private simBaseTime = 0;
 
   constructor(root: HTMLElement, data: ProjectData, opts: EngineOptions = {}) {
-    this.root = root; this.data = data; this.opts = opts;
+    this.root = root; this.data = this.normalizedData(data); this.opts = opts;
     this.timeScaleValue = Math.max(0.1, opts.timeScale ?? (opts.simulateFast ? 10 : 1));
     this.mediaMap = Object.fromEntries(data.media.map((m) => [m.id, m.dataUrl]));
     this.build();
@@ -196,6 +196,15 @@ export class RuntimeEngine {
   }
 
   elapsedSec(): number { return this.startTime ? (this.scaledNow() - this.startTime) / 1000 : 0; }
+
+  private normalizedData(data: ProjectData): ProjectData {
+    const d = structuredClone(data);
+    if (!d.canvasWidth || !d.canvasHeight || d.canvasWidth < 1000 || d.canvasHeight < 600) {
+      d.canvasWidth = 1920;
+      d.canvasHeight = 1080;
+    }
+    return d;
+  }
 
   build() {
     this.root.innerHTML = "";
