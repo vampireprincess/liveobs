@@ -158,7 +158,8 @@ export default function AssetLibraryModal({ onClose, onPlace }: { onClose: () =>
                   className="w-44 bg-transparent px-2 py-1 text-[11px] text-slate-200 outline-none placeholder:text-slate-500"
                   onKeyDown={async (e) => {
                     if (e.key === "Enter") {
-                      const url = (e.target as HTMLInputElement).value.trim();
+                      const rawUrl = (e.target as HTMLInputElement).value.trim();
+                      const url = (rawUrl.match(/\((https?:\/\/[^)]+)\)/)?.[1] || rawUrl.match(/https?:\/\/\S+/)?.[0] || rawUrl).replace(/[\])>.,;]+$/, "");
                       if (!url) return;
                       const name = url.split("/").pop()?.split("?")[0] || "Remote asset";
                       const lower = url.toLowerCase();
@@ -182,7 +183,7 @@ export default function AssetLibraryModal({ onClose, onPlace }: { onClose: () =>
 
                       if (type === "image") {
                         const img = new Image();
-                        img.crossOrigin = "anonymous";
+                        img.referrerPolicy = "no-referrer";
                         img.onload = () => addRemoteMedia(img.naturalWidth || 500, img.naturalHeight || 300);
                         img.onerror = () => addRemoteMedia(500, 300);
                         img.src = url;
@@ -239,7 +240,7 @@ export default function AssetLibraryModal({ onClose, onPlace }: { onClose: () =>
                       </div>
                     )}
                     <div className="aspect-square flex items-center justify-center p-3 bg-black/20">
-                       {m.type === "lottie" ? <span className="text-3xl">🎬</span> : m.type === "video" ? <video src={m.dataUrl} className="h-full w-full object-contain" muted /> : <img src={m.dataUrl} className="h-full w-full object-contain" />}
+                       {m.type === "lottie" ? <span className="text-3xl">🎬</span> : m.type === "video" ? <video src={m.dataUrl} referrerPolicy="no-referrer" className="h-full w-full object-contain" muted /> : <img src={m.dataUrl} referrerPolicy="no-referrer" className="h-full w-full object-contain" />}
                     </div>
                     <div className="p-2 border-t border-slate-800/50 bg-slate-950/50">
                        <div className="truncate text-[10px] font-bold text-slate-300">{m.name}</div>

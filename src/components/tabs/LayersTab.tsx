@@ -78,7 +78,7 @@ export default function LayersTab() {
                              onClick={() => useStore.getState().select("asset", a.id)}
                              className={`flex min-w-0 flex-1 cursor-grab items-center gap-2 ${a.locked ? "opacity-50" : ""}`}
                            >
-                             {a.shape ? <span className="h-5 w-5 rounded border border-slate-600" style={{ background: a.shape.fill }} /> : <img src={media?.dataUrl} className="h-5 w-5 rounded object-contain" />}
+                             {a.shape ? <span className="h-5 w-5 rounded border border-slate-600" style={{ background: a.shape.fill }} /> : <img src={media?.dataUrl} referrerPolicy="no-referrer" className="h-5 w-5 rounded object-contain" />}
                              <span className="min-w-0 truncate">{a.name}</span>
                            </button>
                            <button

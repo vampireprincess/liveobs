@@ -26,6 +26,7 @@ type DragState =
 export default function Canvas() {
   const data = useStore((s) => s.data());
   const runtimePreview = useStore((s) => s.runtimePreview);
+  const runtimePreviewSpeed = useStore((s) => s.runtimePreviewSpeed);
   const tool = useStore((s) => s.tool);
   const selKind = useStore((s) => s.selKind);
   const selId = useStore((s) => s.selId);
@@ -56,11 +57,11 @@ export default function Canvas() {
   useEffect(() => {
     if (!data || !runtimeRef.current) return;
     if (runtimePreview) {
-      const eng = new RuntimeEngine(runtimeRef.current, data, { editorMode: false, simulateFast: true });
+      const eng = new RuntimeEngine(runtimeRef.current, data, { editorMode: false, timeScale: runtimePreviewSpeed });
       engineRef.current = eng; eng.start(); (window as any).__engine = eng;
       return () => { eng.destroy(); engineRef.current = null; };
     }
-  }, [runtimePreview, data]);
+  }, [runtimePreview, data, runtimePreviewSpeed]);
 
   const toCanvas = useCallback((clientX: number, clientY: number) => {
     if (!stageRef.current) return { x: 0, y: 0 };
@@ -263,8 +264,20 @@ export default function Canvas() {
       <CanvasToolbar selIds={selIds} assets={data.assets} W={W} H={H} />
       <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-md bg-slate-900/80 px-2 py-1 text-[11px] font-mono text-slate-400 backdrop-blur">{Math.round(scale * 100)}% · {W}×{H}</div>
       {runtimePreview && (
-        <div className="pointer-events-none absolute right-3 top-3 z-40 flex items-center gap-1.5 rounded-md bg-emerald-900/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 backdrop-blur">
+        <div className="pointer-events-auto absolute right-3 top-3 z-40 flex items-center gap-1.5 rounded-md bg-emerald-900/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 backdrop-blur">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
+          <span className="ml-1 text-emerald-200/70">Speed</span>
+          {[1, 2, 3, 4].map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); useStore.getState().setRuntimePreviewSpeed(speed as 1 | 2 | 3 | 4); }}
+              className={`rounded px-1.5 py-0.5 text-[10px] ${runtimePreviewSpeed === speed ? "bg-emerald-400 text-emerald-950" : "bg-emerald-950/60 text-emerald-200 hover:bg-emerald-800"}`}
+              title={`Preview only: ${speed}x runtime speed`}
+            >
+              {speed}x
+            </button>
+          ))}
         </div>
       )}
       <div ref={stageRef} onPointerDown={onStageDown} className="relative origin-center shadow-2xl shadow-black/60" style={{ width: W, height: H, transform: `scale(${scale})`, background: data.bgColor, cursor: tool !== "select" ? "crosshair" : "default" }}>
@@ -399,7 +412,7 @@ function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: Canvas
   }, [a.animation, a.animSpeed, a.rotation, sx, sy, baseFilter]);
   return (
     <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, opacity: a.opacity, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
-      {a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
+      {a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
     </div>
   );
 }
