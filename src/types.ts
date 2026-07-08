@@ -149,12 +149,15 @@ export interface PathPoint {
   hOut: Vec2;
 }
 
+export type PathMode = "curve" | "angle";
+
 export interface MotionPath {
   id: string;
   name: string;
   points: PathPoint[];
   closed: boolean;
   color: string;
+  mode?: PathMode;
 }
 
 export type ZoneShape = "rect" | "ellipse" | "polygon" | "triangle";

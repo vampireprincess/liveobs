@@ -118,6 +118,17 @@ export default function Canvas() {
       });
       st.select("asset", primaryNewId); useStore.setState({ selIds: newIds }); return;
     }
+    if (e.ctrlKey || e.metaKey) {
+      const exists = st.selIds.includes(a.id);
+      const nextIds = exists ? st.selIds.filter((id) => id !== a.id) : [...st.selIds, a.id];
+      if (nextIds.length) {
+        const primary = exists ? nextIds[0] : a.id;
+        useStore.setState({ selKind: "asset", selId: primary, selIds: nextIds });
+      } else {
+        st.select(null, null);
+      }
+      return;
+    }
     if (!st.selIds.includes(a.id)) { st.select("asset", a.id); useStore.setState({ selIds: [a.id] }); }
     const p = toCanvas(e.clientX, e.clientY);
     setDrag({ mode: "move", id: a.id, startX: p.x, startY: p.y, ox: a.x, oy: a.y });
@@ -167,7 +178,7 @@ export default function Canvas() {
     if (tool === "path") {
       if (!activePathId) {
         const count = st.data()?.paths.length || 0;
-        const np: MotionPath = { id: uid(), name: `Path ${count + 1}`, closed: false, color: "#38bdf8", points: [{ id: uid(), x: p.x, y: p.y, hIn: { x: -60, y: 0 }, hOut: { x: 60, y: 0 } }] };
+        const np: MotionPath = { id: uid(), name: `Path ${count + 1}`, closed: false, color: "#38bdf8", mode: "curve", points: [{ id: uid(), x: p.x, y: p.y, hIn: { x: -60, y: 0 }, hOut: { x: 60, y: 0 } }] };
         st.addPath(np); st.setActivePath(np.id); st.select("path", np.id); return;
       }
       const path = st.data()!.paths.find((x) => x.id === activePathId);
@@ -302,12 +313,12 @@ export default function Canvas() {
       <CanvasToolbar selIds={selIds} assets={data.assets} W={W} H={H} />
       <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-md bg-slate-900/80 px-2 py-1 text-[11px] font-mono text-slate-400 backdrop-blur">{Math.round(scale * 100)}% · {W}×{H}</div>
       {runtimePreview && (
-        <div className="pointer-events-auto absolute right-3 top-3 z-40 rounded-md bg-emerald-900/70 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 backdrop-blur">
+        <div className="pointer-events-auto absolute right-3 top-3 z-40 min-w-[430px] rounded-md bg-emerald-900/70 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 backdrop-blur">
           <div className="mb-1.5 flex items-center gap-1.5">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
           </div>
-          <div className="flex max-w-[285px] flex-wrap items-center gap-1">
-            <span className="mr-1 text-emerald-200/70">Speed</span>
+          <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+            <span className="mr-1 shrink-0 text-emerald-200/70">Speed</span>
             {RUNTIME_SPEEDS.map((speed) => (
               <button
                 key={speed}
@@ -369,14 +380,14 @@ export default function Canvas() {
             {snapLines.y !== undefined && <div className="absolute left-0 right-0 border-t border-violet-500 z-[9999] pointer-events-none" style={{top: snapLines.y}} />}
             <svg className="pointer-events-none absolute inset-0" width={W} height={H}>{data.zones.map((z) => <ZoneShapeSvg key={z.id} z={z} selected={selKind === "zone" && selId === z.id} />)}</svg>
             {tab === "zones" && tool === "select" && data.zones.map((z) => <ZoneHandles key={z.id} z={z} selected={selKind === "zone" && selId === z.id} onDown={onZoneDown} />)}
-            <svg className="absolute inset-0" width={W} height={H} style={{ pointerEvents: tab === "paths" ? "auto" : "none" }}>
+            {tab === "paths" && <svg className="absolute inset-0" width={W} height={H} style={{ pointerEvents: "auto" }}>
               {data.paths.map((path) => {
                 const pathId = `path-anim-${path.id}`;
                 return (
                   <g key={path.id}>
                     <path id={pathId} d={pathSvgD(path)} fill="none" stroke="transparent" strokeWidth={0} />
-                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={12} strokeOpacity={0} className={tab === "paths" ? "cursor-move pointer-events-auto" : ""} onPointerDown={(e) => { if (tab !== "paths") return; e.stopPropagation(); const p = toCanvas(e.clientX, e.clientY); useStore.getState().setActivePath(path.id); useStore.getState().select("path", path.id); setDrag({ mode: "movePath", id: path.id, sx: p.x, sy: p.y, origPoints: [...path.points] }); }} />
-                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={3} strokeDasharray="10 8" opacity={activePathId && path.id === activePathId ? 1 : (tab === "paths" || tool === "path" ? 0.7 : 0.25)} pointerEvents="none" />
+                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={12} strokeOpacity={0} className="cursor-move pointer-events-auto" onPointerDown={(e) => { e.stopPropagation(); const p = toCanvas(e.clientX, e.clientY); useStore.getState().setActivePath(path.id); useStore.getState().select("path", path.id); setDrag({ mode: "movePath", id: path.id, sx: p.x, sy: p.y, origPoints: [...path.points] }); }} />
+                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={3} strokeDasharray={(path.mode ?? "curve") === "angle" ? undefined : "10 8"} opacity={activePathId && path.id === activePathId ? 1 : 0.7} pointerEvents="none" />
                     {activePathId === path.id && (
                       <circle r="6" fill="#facc15" stroke="#fff" strokeWidth={2}>
                         <animateMotion dur="4s" repeatCount="indefinite" path={pathSvgD(path)} />
@@ -385,21 +396,23 @@ export default function Canvas() {
                   </g>
                 );
               })}
-            </svg>
-            {activePathId && (tab === "paths" || tool === "path") && (() => {
+            </svg>}
+            {activePathId && tab === "paths" && (() => {
                 const path = data.paths.find((p) => p.id === activePathId); if (!path) return null;
                 return (
                   <svg className="absolute inset-0" width={W} height={H} style={{ overflow: "visible", pointerEvents: "none" }}>
-                    {path.points.map((pt, i) => (
+                    {path.points.map((pt, i) => {
+                      const showCurveHandles = (path.mode ?? "curve") === "curve";
+                      return (
                       <g key={pt.id} style={{ pointerEvents: "auto" }}>
-                        <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hIn.x} y2={pt.y + pt.hIn.y} stroke="#60a5fa" strokeWidth={1.5} />
-                        <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hOut.x} y2={pt.y + pt.hOut.y} stroke="#f472b6" strokeWidth={1.5} />
-                        <circle cx={pt.x + pt.hIn.x} cy={pt.y + pt.hIn.y} r={8} fill="#60a5fa" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "in")} />
-                        <circle cx={pt.x + pt.hOut.x} cy={pt.y + pt.hOut.y} r={8} fill="#f472b6" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "out")} />
+                        {showCurveHandles && <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hIn.x} y2={pt.y + pt.hIn.y} stroke="#60a5fa" strokeWidth={1.5} />}
+                        {showCurveHandles && <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hOut.x} y2={pt.y + pt.hOut.y} stroke="#f472b6" strokeWidth={1.5} />}
+                        {showCurveHandles && <circle cx={pt.x + pt.hIn.x} cy={pt.y + pt.hIn.y} r={8} fill="#60a5fa" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "in")} />}
+                        {showCurveHandles && <circle cx={pt.x + pt.hOut.x} cy={pt.y + pt.hOut.y} r={8} fill="#f472b6" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "out")} />}
                         {i === 0 && path.points.length > 2 && <circle cx={pt.x} cy={pt.y} r={16} fill="none" stroke="#facc15" strokeWidth={2} strokeDasharray="4 3" style={{ pointerEvents: "auto", cursor: "pointer" }} onPointerDown={() => useStore.getState().updatePath(path.id, { closed: true })} />}
                         <rect x={pt.x - 8} y={pt.y - 8} width={16} height={16} rx={3} fill="#fff" stroke={path.color} strokeWidth={2.5} style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "p")} onContextMenu={(e) => { e.preventDefault(); if (path.points.length > 2) useStore.getState().updatePath(path.id, { points: path.points.filter((pp) => pp.id !== pt.id) }); }} />
                       </g>
-                    ))}
+                    );})}
                   </svg>
                 );
               })()}
