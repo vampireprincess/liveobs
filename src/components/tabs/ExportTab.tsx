@@ -1,8 +1,8 @@
+import { useMemo, useState } from "react";
 import { useStore } from "../../store";
 import { exportZip, exportSingleHtml } from "../../runtime/exportHtml";
 import { Btn, Field, NumberInput, Panel, Select, Slider, Toggle } from "../ui";
 import GradientPicker from "../GradientPicker";
-import { repairCanvasToFullHd } from "../../projectNormalize";
 
 const SIZES = [
   { value: "1920x1080", label: "1920 × 1080 (Full HD)" },
@@ -16,17 +16,41 @@ export default function ExportTab() {
   const data = useStore((s) => s.data())!;
   const project = useStore((s) => s.current())!;
   const upd = useStore.getState().update;
+  const [bgSizeAssetId, setBgSizeAssetId] = useState("");
 
-  const forceRestoreCanvas = async () => {
-    const st = useStore.getState();
-    st.update((d) => repairCanvasToFullHd(d));
-    await st.saveNow();
+  const backgroundSizeAssets = useMemo(() => {
+    const bgLayerIds = new Set(data.layers.filter((l) => l.id === "layer-bg" || l.name.toLowerCase().includes("background")).map((l) => l.id));
+    const bgAssets = data.assets.filter((a) => a.visible && bgLayerIds.has(a.layerId));
+    return bgAssets.length ? bgAssets : data.assets.filter((a) => a.visible && a.layerId !== "layer-rand");
+  }, [data.assets, data.layers]);
+  const selectedBgAsset = backgroundSizeAssets.find((a) => a.id === bgSizeAssetId) ?? backgroundSizeAssets[0];
+  const selectedBgMedia = selectedBgAsset?.mediaId ? data.media.find((m) => m.id === selectedBgAsset.mediaId) : undefined;
+
+  const setCanvasFromAsset = (mode: "placed" | "source") => {
+    if (!selectedBgAsset) return;
+    const w = mode === "source" ? selectedBgMedia?.width ?? selectedBgAsset.width : selectedBgAsset.width;
+    const h = mode === "source" ? selectedBgMedia?.height ?? selectedBgAsset.height : selectedBgAsset.height;
+    upd((d) => {
+      d.canvasWidth = Math.max(320, Math.round(w));
+      d.canvasHeight = Math.max(240, Math.round(h));
+    });
     window.dispatchEvent(new CustomEvent("liveobs-force-runtime-rebuild"));
   };
 
   const sizeKey = `${data.canvasWidth}x${data.canvasHeight}`;
   const known = SIZES.some((s) => s.value === sizeKey) ? sizeKey : "custom";
-  const usedMediaIds = new Set(data.assets.filter((a) => a.visible && data.layers.find((l) => l.id === a.layerId)?.visible !== false).map((a) => a.mediaId).filter(Boolean));
+  const usedMediaIds = new Set(
+    data.assets
+      .filter((a) => a.visible && data.layers.find((l) => l.id === a.layerId)?.visible !== false)
+      .filter((a) => {
+        if (a.layerId !== "layer-rand") return true;
+        const media = data.media.find((m) => m.id === a.mediaId);
+        const schedule: any = media?.schedule;
+        return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+      })
+      .map((a) => a.mediaId)
+      .filter(Boolean)
+  );
 
   return (
     <div>
@@ -53,7 +77,22 @@ export default function ExportTab() {
             <NumberInput value={data.canvasHeight} onChange={(v) => upd((d) => (d.canvasHeight = Math.max(240, v)))} />
           </Field>
         </div>
-        <Btn className="w-full" onClick={forceRestoreCanvas}>↩ Force repair runtime/export canvas to 1920×1080</Btn>
+        {backgroundSizeAssets.length > 0 && (
+          <div className="rounded-md border border-slate-800 bg-slate-950/40 p-2">
+            <Field label="Custom base resolution from background asset">
+              <Select
+                value={selectedBgAsset?.id ?? ""}
+                onChange={setBgSizeAssetId}
+                options={backgroundSizeAssets.map((a) => ({ value: a.id, label: `${a.name} · placed ${Math.round(a.width)}×${Math.round(a.height)}` }))}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-1.5">
+              <Btn onClick={() => setCanvasFromAsset("placed")}>Use placed size</Btn>
+              <Btn onClick={() => setCanvasFromAsset("source")} disabled={!selectedBgMedia?.width || !selectedBgMedia?.height}>Use source size</Btn>
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">Use this when your background image is intentionally larger/different than 1920×1080.</p>
+          </div>
+        )}
         {!data.bgGradient?.enabled && (
           <Field label="Background Color">
             <input type="color" value={data.bgColor} onChange={(e) => upd((d) => (d.bgColor = e.target.value))} className="h-9 w-full rounded" />
