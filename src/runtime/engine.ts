@@ -248,9 +248,10 @@ export class RuntimeEngine {
       if (staticMedia?.type === "lottie") {
         try {
           const isData = staticMedia.dataUrl.startsWith("data:");
-          lottie.loadAnimation(isData
+          const anim = lottie.loadAnimation(isData
             ? { container: el, renderer: "svg", loop: true, autoplay: true, animationData: JSON.parse(atob(staticMedia.dataUrl.split(",")[1])) }
             : { container: el, renderer: "svg", loop: true, autoplay: true, path: staticMedia.dataUrl });
+          anim.addEventListener("complete", () => anim.goToAndPlay(0, true));
         } catch (e) { console.warn("Lottie runtime error", e); }
       } else {
         el.innerHTML = this.assetMarkup(a);
@@ -547,7 +548,8 @@ export class RuntimeEngine {
     if (media.type === "lottie") {
       try { 
         const animData = JSON.parse(atob(media.dataUrl.split(",")[1])); 
-        lottie.loadAnimation({ container: el, renderer: "svg", loop: true, autoplay: true, animationData: animData }); 
+        const anim = lottie.loadAnimation({ container: el, renderer: "svg", loop: true, autoplay: true, animationData: animData });
+        anim.addEventListener("complete", () => anim.goToAndPlay(0, true)); 
       } catch (e) {}
     } else if (media.type === "video") {
       const safeUrl = String(media.dataUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
