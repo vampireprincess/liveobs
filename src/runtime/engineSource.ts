@@ -216,7 +216,7 @@ RuntimeEngine.prototype.build=function(){
   });
   d.assets.forEach(function(a){
     if(!a.visible) return;
-    if(a.layerId==='layer-rand') return;
+    if(a.layerId==='layer-rand' && !a.gradient) return;
     var layerIndex=d.layers.findIndex(function(l){return l.id===a.layerId;});
     var layerEl=root;
     var el=document.createElement('div');

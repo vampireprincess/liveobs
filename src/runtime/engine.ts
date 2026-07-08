@@ -221,7 +221,7 @@ export class RuntimeEngine {
 
     for (const a of this.data.assets) {
       if (!a.visible) continue;
-      if (a.layerId === "layer-rand") continue;
+      if (a.layerId === "layer-rand" && !a.gradient) continue;
       const layerIndex = this.data.layers.findIndex((l) => l.id === a.layerId);
       const layerEl = this.root;
       const el = document.createElement("div");

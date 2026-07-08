@@ -143,6 +143,26 @@ export default function GradientTab() {
 
   const [savedPalettes, setSavedPalettes] = useState<SavedPalette[]>([]);
   const [savedGradients, setSavedGradients] = useState<SavedGradient[]>([]);
+  const paletteUndo = useRef<{ paletteColors: string[]; activeColors: boolean[]; savedPalettes: SavedPalette[] }[]>([]);
+
+  const pushPaletteUndo = () => {
+    paletteUndo.current = [...paletteUndo.current, { paletteColors, activeColors, savedPalettes }].slice(-30);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      const prev = paletteUndo.current.pop();
+      if (!prev) return;
+      e.preventDefault();
+      setPaletteColors(prev.paletteColors);
+      setActiveColors(prev.activeColors);
+      setSavedPalettes(prev.savedPalettes);
+      saveSavedPalettes(prev.savedPalettes);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [paletteColors, activeColors, savedPalettes]);
 
   useEffect(() => {
     setSavedPalettes(loadSavedPalettes());
@@ -152,6 +172,7 @@ export default function GradientTab() {
   const runExtract = async (dataUrl: string, n: number) => {
     setBusy(true);
     const colors = await extractColorsFromImage(dataUrl, n);
+    pushPaletteUndo();
     setPaletteColors(colors);
     setActiveColors(colors.map(() => true));
     setBusy(false);
@@ -183,6 +204,7 @@ export default function GradientTab() {
 
   const savePalette = () => {
     if (!enabledColors.length) return;
+    pushPaletteUndo();
     const p: SavedPalette = { id: uid(), name: "Palette " + (savedPalettes.length + 1), colors: enabledColors };
     const next = [p, ...savedPalettes];
     setSavedPalettes(next);
@@ -190,11 +212,13 @@ export default function GradientTab() {
   };
 
   const applySavedPalette = (p: SavedPalette) => {
+    pushPaletteUndo();
     setPaletteColors(p.colors);
     setActiveColors(p.colors.map(() => true));
   };
 
   const deleteSavedPalette = (id: string) => {
+    pushPaletteUndo();
     const next = savedPalettes.filter((p) => p.id !== id);
     setSavedPalettes(next);
     saveSavedPalettes(next);
@@ -246,7 +270,7 @@ export default function GradientTab() {
               {paletteColors.map((c, i) => (
                 <button
                   key={i}
-                  onClick={() => setActiveColors((a) => a.map((v, idx) => (idx === i ? !v : v)))}
+                  onClick={() => { pushPaletteUndo(); setActiveColors((a) => a.map((v, idx) => (idx === i ? !v : v))); }}
                   title={c}
                   className={`aspect-square rounded border-2 ${activeColors[i] ? "border-white" : "border-transparent opacity-25"}`}
                   style={{ background: c }}
