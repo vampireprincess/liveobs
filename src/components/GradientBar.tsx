@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { ColorStop } from "../types";
 import { uid } from "../factory";
+import { useStore } from "../store";
 
 interface Props {
   stops: ColorStop[];
@@ -61,6 +62,15 @@ export default function GradientBar({ stops, onChange }: Props) {
     onChange(stops.map((s) => (s.id === id ? { ...s, color } : s)));
   };
 
+  const undoColorKey = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) useStore.getState().redo();
+      else useStore.getState().undo();
+    }
+  };
+
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[9px] text-slate-500">
@@ -96,6 +106,7 @@ export default function GradientBar({ stops, onChange }: Props) {
               value={s.color}
               title="Click to edit color"
               onPointerDown={(e) => { e.stopPropagation(); setActiveId(s.id); }}
+              onKeyDown={undoColorKey}
               onChange={(e) => setColor(s.id, e.target.value)}
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
@@ -109,6 +120,7 @@ export default function GradientBar({ stops, onChange }: Props) {
           <input
             type="color"
             value={sorted.find((s) => s.id === activeId)?.color || "#ffffff"}
+            onKeyDown={undoColorKey}
             onChange={(e) => setColor(activeId, e.target.value)}
             className="h-6 w-10 rounded"
           />

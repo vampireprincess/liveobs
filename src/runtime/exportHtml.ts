@@ -15,13 +15,13 @@ function pruneUnusedMedia(data: ProjectData): ProjectData {
   const d = structuredClone(data);
   const used = new Set<string>();
   const visibleLayerIds = new Set(d.layers.filter((l) => l.visible).map((l) => l.id));
-  d.assets = d.assets.filter((a) => a.visible && visibleLayerIds.has(a.layerId));
+  // Export visible scene assets, plus layer-rand template assets that are ON in
+  // "Assets on Canvas" even if their layer eye is hidden. Those templates are
+  // required for random runtime spawns.
+  d.assets = d.assets.filter((a) => visibleLayerIds.has(a.layerId) && (a.visible || a.layerId === "layer-rand"));
   d.assets.forEach((a) => {
     if (!a.mediaId) return;
-    if (a.layerId !== "layer-rand") { used.add(a.mediaId); return; }
-    const media = d.media.find((m) => m.id === a.mediaId);
-    const schedule: any = media?.schedule;
-    if (schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0)) used.add(a.mediaId);
+    used.add(a.mediaId);
   });
   d.bgRotation.mediaIds.forEach((id) => used.add(id));
   d.particles.forEach((p) => p.customMediaIds.forEach((id) => used.add(id)));
