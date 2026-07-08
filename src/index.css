@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@keyframes obs-pendulum { 0%,100% { transform: rotate(-12deg); } 50% { transform: rotate(12deg); } }
+@keyframes obs-spin { to { transform: rotate(360deg); } }
+@keyframes obs-float { 0%,100% { transform: translateY(-12px); } 50% { transform: translateY(12px); } }
+@keyframes obs-pulse { 0%,100% { transform: scale(.94); } 50% { transform: scale(1.08); } }
+@keyframes obs-bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-28px); } }
+@keyframes obs-shake { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-5px,3px); } 50% { transform: translate(4px,-4px); } 75% { transform: translate(5px,2px); } }
+@keyframes obs-wiggle { 0%,100% { transform: translateX(-10px); } 50% { transform: translateX(10px); } }
+@keyframes obs-skew { 0%,100% { transform: skewX(-8deg); } 50% { transform: skewX(8deg); } }
+@keyframes obs-blur { 0%,100% { filter: blur(0); } 50% { filter: blur(5px); } }
+
+.obs-anim-pendulum { animation-name: obs-pendulum; }
+.obs-anim-rotation { animation-name: obs-spin; }
+.obs-anim-float { animation-name: obs-float; }
+.obs-anim-pulse { animation-name: obs-pulse; }
+.obs-anim-bounce { animation-name: obs-bounce; }
+.obs-anim-shake { animation-name: obs-shake; }
+.obs-anim-wiggle { animation-name: obs-wiggle; }
+.obs-anim-skew { animation-name: obs-skew; }
+.obs-anim-blur { animation-name: obs-blur; }
+
+.obs-anim {
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  width: 100%;
+  height: 100%;
+}
