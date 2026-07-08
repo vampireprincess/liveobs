@@ -44,7 +44,7 @@ export default function ExportTab() {
             <NumberInput value={data.canvasHeight} onChange={(v) => upd((d) => (d.canvasHeight = Math.max(240, v)))} />
           </Field>
         </div>
-        <Btn className="w-full" onClick={() => upd((d) => { d.canvasWidth = 1920; d.canvasHeight = 1080; })}>↩ Restore canvas to 1920×1080</Btn>
+        <Btn className="w-full" onClick={() => { useStore.getState().setRuntimePreview(false); upd((d) => { d.canvasWidth = 1920; d.canvasHeight = 1080; d.assets.forEach((a) => { if (a.name === "Gradient Layer" && a.x === 0 && a.y === 0) { a.width = 1920; a.height = 1080; } }); }); }}>↩ Force restore canvas to 1920×1080</Btn>
         {!data.bgGradient?.enabled && (
           <Field label="Background Color">
             <input type="color" value={data.bgColor} onChange={(e) => upd((d) => (d.bgColor = e.target.value))} className="h-9 w-full rounded" />

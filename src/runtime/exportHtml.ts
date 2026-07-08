@@ -1,13 +1,15 @@
 import JSZip from "jszip";
-import type { Project } from "../types";
+import type { Project, ProjectData } from "../types";
 import { RUNTIME_ENGINE_SRC } from "./engineSource";
 import LOTTIE_WEB_SRC from "lottie-web/build/player/lottie.min.js?raw";
 
 // Build a standalone HTML string that runs the scene in OBS Browser Source.
 // Everything (data + engine) is embedded — no server, no API, no editor UI.
-export function buildRuntimeHtml(project: Project): string {
-  const data = project.data;
+export function buildRuntimeHtml(project: Project, opts: { dataOverride?: ProjectData; externalRuntimeSrc?: string; externalLottieSrc?: string } = {}): string {
+  const data = opts.dataOverride ?? project.data;
   const json = JSON.stringify(data);
+  const lottieScript = opts.externalLottieSrc ? `<script src="${opts.externalLottieSrc}"></script>` : `<script>\n${LOTTIE_WEB_SRC}\n</script>`;
+  const runtimeScript = opts.externalRuntimeSrc ? `<script src="${opts.externalRuntimeSrc}"></script>` : `<script>\n${RUNTIME_ENGINE_SRC}\n</script>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -20,15 +22,11 @@ export function buildRuntimeHtml(project: Project): string {
   #stage{transform-origin:center center;}
   img,video{-webkit-user-drag:none;user-select:none;}
 </style>
-<script>
-${LOTTIE_WEB_SRC}
-</script>
+${lottieScript}
 </head>
 <body>
 <div id="stage-wrap"><div id="stage"></div></div>
-<script>
-${RUNTIME_ENGINE_SRC}
-</script>
+${runtimeScript}
 <script>
 (function(){
   var DATA = ${json};
@@ -54,15 +52,22 @@ function escapeHtml(s: string): string {
 
 export async function exportZip(project: Project): Promise<void> {
   const zip = new JSZip();
-  zip.file("index.html", buildRuntimeHtml(project));
-  zip.file("runtime/runtime.js", RUNTIME_ENGINE_SRC);
-  zip.file("runtime/runtime.css", "html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}#stage-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}#stage{transform-origin:center center;}img,video{-webkit-user-drag:none;user-select:none;}");
-  zip.file("project.json", JSON.stringify(project.data, null, 2));
+  const data = structuredClone(project.data);
   const assetFolder = zip.folder("assets");
-  for (const media of project.data.media) {
+  for (const media of data.media) {
     const parsed = dataUrlToFile(media.dataUrl);
-    if (parsed) assetFolder?.file(`${media.id}-${sanitize(media.name)}.${parsed.ext}`, parsed.bytes);
+    if (parsed) {
+      const filename = `${media.id}-${sanitize(media.name)}.${parsed.ext}`;
+      assetFolder?.file(filename, parsed.bytes);
+      media.dataUrl = `assets/${filename}`;
+    }
   }
+
+  zip.file("index.html", buildRuntimeHtml(project, { dataOverride: data, externalRuntimeSrc: "runtime/runtime.js", externalLottieSrc: "runtime/lottie.min.js" }));
+  zip.file("runtime/runtime.js", RUNTIME_ENGINE_SRC);
+  zip.file("runtime/lottie.min.js", LOTTIE_WEB_SRC);
+  zip.file("runtime/runtime.css", "html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}#stage-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}#stage{transform-origin:center center;}img,video{-webkit-user-drag:none;user-select:none;}");
+  zip.file("project.json", JSON.stringify(data, null, 2));
   zip.file(
     "README.txt",
     `${project.name} — OBS Browser Source Layout\n\n` +
@@ -77,6 +82,39 @@ export async function exportZip(project: Project): Promise<void> {
   downloadBlob(blob, sanitize(project.name) + ".zip");
 }
 
+async function optimizeImagesForSingleHtml(data: ProjectData): Promise<ProjectData> {
+  const clone = structuredClone(data);
+  await Promise.all(clone.media.map(async (m) => {
+    if (!m.dataUrl.startsWith('data:image/') || m.type === 'svg' || m.type === 'gif' || m.type === 'lottie') return;
+    const used = clone.assets.filter((a) => a.mediaId === m.id);
+    if (!used.length) return;
+    const maxW = Math.max(...used.map((a) => Math.ceil(a.width * (a.scale || 1))));
+    const maxH = Math.max(...used.map((a) => Math.ceil(a.height * (a.scale || 1))));
+    if (!maxW || !maxH) return;
+    try {
+      const img = await loadImage(m.dataUrl);
+      if (img.naturalWidth <= maxW * 1.15 && img.naturalHeight <= maxH * 1.15) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, maxW); canvas.height = Math.max(1, maxH);
+      const ctx = canvas.getContext('2d'); if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const mime = m.dataUrl.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
+      m.dataUrl = canvas.toDataURL(mime.includes('png') ? 'image/png' : mime.includes('webp') ? 'image/webp' : 'image/jpeg', 0.86);
+      m.width = canvas.width; m.height = canvas.height;
+    } catch {}
+  }));
+  return clone;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 function dataUrlToFile(dataUrl: string): { bytes: Uint8Array; ext: string } | null {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -88,8 +126,9 @@ function dataUrlToFile(dataUrl: string): { bytes: Uint8Array; ext: string } | nu
   return { bytes, ext };
 }
 
-export function exportSingleHtml(project: Project): void {
-  const blob = new Blob([buildRuntimeHtml(project)], { type: "text/html" });
+export async function exportSingleHtml(project: Project): Promise<void> {
+  const optimized = await optimizeImagesForSingleHtml(project.data);
+  const blob = new Blob([buildRuntimeHtml(project, { dataOverride: optimized })], { type: "text/html" });
   downloadBlob(blob, sanitize(project.name) + ".html");
 }
 

@@ -102,7 +102,6 @@ export default function GradientTab() {
       const cur = d.gradientStudio ?? studio;
       const nextGradient = { ...cur.gradient, ...patch };
       d.gradientStudio = { ...cur, gradient: nextGradient };
-      d.assets.forEach((a) => { if (a.gradient) a.gradient = structuredClone(nextGradient); });
     });
 
   const applyModernPreset = (preset: typeof MODERN_PRESETS[number]) => {
@@ -115,18 +114,6 @@ export default function GradientTab() {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${data.canvasWidth}" height="${data.canvasHeight}" viewBox="0 0 ${data.canvasWidth} ${data.canvasHeight}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:${css};"></div></foreignObject></svg>`;
     const encoded = btoa(unescape(encodeURIComponent(svg)));
     const dataUrl = `data:image/svg+xml;base64,${encoded}`;
-    const existingAsset = data.assets.find((a) => a.name === "Gradient Layer" && data.media.find((m) => m.id === a.mediaId)?.name === "Gradient Layer");
-    const existingMediaId = existingAsset?.mediaId;
-    if (existingAsset && existingMediaId) {
-      useStore.getState().update((d) => {
-        const media = d.media.find((m) => m.id === existingMediaId);
-        if (media) Object.assign(media, { dataUrl, width: d.canvasWidth, height: d.canvasHeight });
-        const asset = d.assets.find((a) => a.id === existingAsset.id);
-        if (asset) Object.assign(asset, { gradient: structuredClone(g), fit: "fill" });
-      });
-      useStore.getState().select("asset", existingAsset.id);
-      return;
-    }
     const media = {
       id: uid(),
       name: "Gradient Layer",

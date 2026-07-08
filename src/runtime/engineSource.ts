@@ -212,11 +212,12 @@ RuntimeEngine.prototype.build=function(){
   d.assets.forEach(function(a){
     if(!a.visible) return;
     if(a.layerId==='layer-rand') return;
-    var layerEl=self.layerEls[a.layerId]||root;
+    var layerIndex=d.layers.findIndex(function(l){return l.id===a.layerId;});
+    var layerEl=root;
     var el=document.createElement('div');
     el.style.position='absolute'; el.style.left=a.x+'px'; el.style.top=a.y+'px';
     el.style.width=a.width+'px'; el.style.height=a.height+'px'; el.style.opacity=String(a.opacity);
-    el.style.zIndex=String(a.zoffset);
+    el.style.zIndex=String((Math.max(0,layerIndex)*1000)+(a.zoffset||0)+10);
     el.style.mixBlendMode=a.blend==='normal'?'normal':(a.blend==='add'?'plus-lighter':a.blend);
     el.style.transformOrigin=((a.refPointX||0.5)*100)+'% '+((a.refPointY||0.5)*100)+'%';
     var sx=a.flipH?-a.scale:a.scale, sy=a.flipV?-a.scale:a.scale;
@@ -508,9 +509,11 @@ RuntimeEngine.prototype.triggerMedia=function(mediaId){
   var templateAsset=this.data.assets.find(function(a){return a.mediaId===mediaId;});
   var w=templateAsset?templateAsset.width:(media.width||200);
   var h=templateAsset?templateAsset.height:(media.height||120);
-  var layerEl=this.layerEls[cat&&cat.layerId||'layer-rand']||this.root;
+  var targetLayerId=(cat&&cat.layerId)||'layer-rand';
+  var targetLayerIndex=this.data.layers.findIndex(function(l){return l.id===targetLayerId;});
+  var layerEl=this.root;
   var el=document.createElement('div'); el.style.position='absolute'; el.style.width=w+'px'; el.style.height=h+'px'; el.style.willChange='transform, opacity, filter';
-  el.style.zIndex=String(templateAsset&&templateAsset.zoffset!==undefined?templateAsset.zoffset:100);
+  el.style.zIndex=String((Math.max(0,targetLayerIndex)*1000)+((templateAsset&&templateAsset.zoffset!==undefined)?templateAsset.zoffset:100)+10);
   el.style.opacity=String(templateAsset&&templateAsset.opacity!==undefined?templateAsset.opacity:1);
   el.style.mixBlendMode=templateAsset&&templateAsset.blend==='add'?'plus-lighter':((templateAsset&&templateAsset.blend)||'normal');
   if(poly.length>0) el.style.transform='translate('+(poly[0].x-w/2)+'px,'+(poly[0].y-h/2)+'px)';
