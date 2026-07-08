@@ -93,8 +93,8 @@ export default function App() {
         if (e.key.toLowerCase() === "e") { st.setTool("zone-rect"); st.setTab("zones"); }
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   if (typeof window !== "undefined" && window.location.hash.startsWith("#runtime")) {

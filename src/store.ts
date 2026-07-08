@@ -155,11 +155,15 @@ export const useStore = create<AppState>((set, get) => {
             ...c,
             flipAxis: c.flipAxis ?? "horizontal",
           })),
-          assets: p.data.assets.map((a) => ({
-            ...a,
-            fit: a.fit ?? "contain",
-            gradient: a.gradient ?? (a.name === "Gradient Layer" ? structuredClone(p.data.gradientStudio?.gradient ?? createProject().data.gradientStudio!.gradient) : undefined),
-          })),
+          assets: p.data.assets.map((a) => {
+            const media = (p.data.media || []).find((m: any) => m.id === a.mediaId);
+            const looksLikeGradient = a.gradient || a.name === "Gradient Layer" || media?.name === "Gradient Layer";
+            return {
+              ...a,
+              fit: a.fit ?? "contain",
+              gradient: a.gradient ?? (looksLikeGradient ? structuredClone(p.data.gradientStudio?.gradient ?? createProject().data.gradientStudio!.gradient) : undefined),
+            };
+          }),
           paths: (p.data.paths || []).map((path: any) => ({ ...path, mode: path.mode ?? "curve", easing: path.easing ?? "linear" })),
           media: (p.data.media || []).map((m: any) => ({
             ...m,

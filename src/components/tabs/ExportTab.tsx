@@ -26,7 +26,18 @@ export default function ExportTab() {
 
   const sizeKey = `${data.canvasWidth}x${data.canvasHeight}`;
   const known = SIZES.some((s) => s.value === sizeKey) ? sizeKey : "custom";
-  const usedMediaIds = new Set(data.assets.filter((a) => a.visible && data.layers.find((l) => l.id === a.layerId)?.visible !== false).map((a) => a.mediaId).filter(Boolean));
+  const usedMediaIds = new Set(
+    data.assets
+      .filter((a) => a.visible && data.layers.find((l) => l.id === a.layerId)?.visible !== false)
+      .filter((a) => {
+        if (a.layerId !== "layer-rand") return true;
+        const media = data.media.find((m) => m.id === a.mediaId);
+        const schedule: any = media?.schedule;
+        return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+      })
+      .map((a) => a.mediaId)
+      .filter(Boolean)
+  );
 
   return (
     <div>

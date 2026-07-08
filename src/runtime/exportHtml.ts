@@ -16,7 +16,13 @@ function pruneUnusedMedia(data: ProjectData): ProjectData {
   const used = new Set<string>();
   const visibleLayerIds = new Set(d.layers.filter((l) => l.visible).map((l) => l.id));
   d.assets = d.assets.filter((a) => a.visible && visibleLayerIds.has(a.layerId));
-  d.assets.forEach((a) => { if (a.mediaId) used.add(a.mediaId); });
+  d.assets.forEach((a) => {
+    if (!a.mediaId) return;
+    if (a.layerId !== "layer-rand") { used.add(a.mediaId); return; }
+    const media = d.media.find((m) => m.id === a.mediaId);
+    const schedule: any = media?.schedule;
+    if (schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0)) used.add(a.mediaId);
+  });
   d.bgRotation.mediaIds.forEach((id) => used.add(id));
   d.particles.forEach((p) => p.customMediaIds.forEach((id) => used.add(id)));
   d.media = d.media.filter((m) => used.has(m.id));
