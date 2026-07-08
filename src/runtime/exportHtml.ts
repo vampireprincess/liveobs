@@ -79,6 +79,9 @@ export async function exportZip(project: Project): Promise<void> {
   for (const media of data.media) {
     const parsed = dataUrlToFile(media.dataUrl);
     if (parsed) {
+      // Keep used Lottie JSON inline in project data: lottie-web path loading from local ZIP
+      // can be unreliable in file:// / OBS contexts, while inline JSON is small and robust.
+      if (media.type === "lottie") continue;
       const filename = `${media.id}-${sanitize(media.name)}.${parsed.ext}`;
       assetFolder?.file(filename, parsed.bytes);
       media.dataUrl = `assets/${filename}`;

@@ -19,9 +19,9 @@ export default function ExportTab() {
 
   const forceRestoreCanvas = async () => {
     const st = useStore.getState();
-    st.setRuntimePreview(false);
     st.update((d) => repairCanvasToFullHd(d));
     await st.saveNow();
+    window.dispatchEvent(new CustomEvent("liveobs-force-runtime-rebuild"));
   };
 
   const sizeKey = `${data.canvasWidth}x${data.canvasHeight}`;
