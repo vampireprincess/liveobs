@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { loadAllProjects, getMeta } from "../db";
 import { RuntimeEngine } from "../runtime/engine";
 import type { ProjectData } from "../types";
+import { normalizeCanvasSize } from "../projectNormalize";
 
 // Fullscreen standalone runtime rendered from the last opened project.
 // Used when the app is opened with #runtime (e.g. a separate OBS window),
@@ -16,7 +17,7 @@ export default function RuntimeView() {
       const projects = await loadAllProjects();
       const lastId = await getMeta<string>("lastProject");
       const p = projects.find((x) => x.id === lastId) ?? projects[0];
-      if (p) setData(p.data);
+      if (p) setData(normalizeCanvasSize(p.data));
     })();
   }, []);
 
