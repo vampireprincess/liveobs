@@ -153,6 +153,10 @@ export function shapeSvg(a: import("../types").CanvasAsset): string {
   const sw = shape.strokeWidth, fill = shape.fill, stroke = shape.stroke, common = `vector-effect:non-scaling-stroke;`;
   if (shape.kind === "ellipse") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><ellipse cx="50" cy="50" rx="${50 - sw}" ry="${50 - sw}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
   if (shape.kind === "triangle") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,4 96,96 4,96" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "diamond") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 97,50 50,97 3,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "pentagon") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 97,38 79,96 21,96 3,38" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "hexagon") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="25,5 75,5 98,50 75,95 25,95 2,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "star") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 61,36 96,36 68,56 79,91 50,70 21,91 32,56 4,36 39,36" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
   if (shape.kind === "line") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><line x1="2" y1="50" x2="98" y2="50" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" style="${common}"/></svg>`;
   return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><rect x="${sw}" y="${sw}" width="${100 - sw * 2}" height="${100 - sw * 2}" rx="${shape.radius}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
 }
@@ -244,6 +248,25 @@ export class RuntimeEngine {
         const s = a.shadow; const sh = `drop-shadow(${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color})`;
         el.style.filter = a.animation === "blur" ? el.style.filter + " " + sh : sh;
       }
+      if (a.gradient) {
+        const child = document.createElement("div");
+        child.style.width = "100%"; child.style.height = "100%";
+        el.appendChild(child);
+        const renderGradient = (elapsed: number) => {
+          const gg = a.gradient!;
+          if (!gg.animate) { child.style.background = gradientCss(gg.type, gg.angle, gg.stops); return; }
+          const anim = computeGradientAnim(gg, elapsed);
+          const animType = gg.animType || (gg.type === "linear" ? "rotation" : "hue");
+          if (animType === "panning") { child.style.backgroundSize = gg.type === "linear" ? "220% 220%" : "100% 100%"; child.style.backgroundPosition = `${anim.panPercent}% 50%`; child.style.background = gradientCss(gg.type, gg.angle, gg.stops); }
+          else if (animType === "hue") child.style.background = gradientCss(gg.type, gg.angle, gg.stops, anim.hueShift);
+          else child.style.background = gradientCss(gg.type, anim.angle, gg.stops);
+        };
+        if (a.gradient.animate) {
+          const start = performance.now();
+          const tick = () => { if (!child.isConnected) return; renderGradient((performance.now() - start) / 1000); requestAnimationFrame(tick); };
+          tick();
+        } else renderGradient(0);
+      } else {
       const staticMedia = a.mediaId ? this.data.media.find((m) => m.id === a.mediaId) : undefined;
       if (staticMedia?.type === "lottie") {
         try {
@@ -256,6 +279,7 @@ export class RuntimeEngine {
         } catch (e) { console.warn("Lottie runtime error", e); }
       } else {
         el.innerHTML = this.assetMarkup(a);
+      }
       }
       layerEl.appendChild(el);
     }

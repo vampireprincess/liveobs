@@ -238,6 +238,18 @@ RuntimeEngine.prototype.build=function(){
         var s2=a.shadow; el.style.filter='drop-shadow('+s2.offsetX+'px '+s2.offsetY+'px '+s2.blur+'px '+s2.color+')';
       }
     }
+    if(a.gradient){
+      var child=document.createElement('div'); child.style.width='100%'; child.style.height='100%'; el.appendChild(child);
+      var renderGrad=function(elm,gg,elapsed){
+        if(!gg.animate){elm.style.background=_gradientCss(gg.type,gg.angle,gg.stops,0);return;}
+        var an=_computeGradAnim(gg,elapsed); var at=gg.animType||(gg.type==='linear'?'rotation':'hue');
+        if(at==='panning'){elm.style.backgroundSize=gg.type==='linear'?'220% 220%':'100% 100%'; elm.style.backgroundPosition=an.panPercent+'% 50%'; elm.style.background=_gradientCss(gg.type,gg.angle,gg.stops,0);}
+        else if(at==='hue') elm.style.background=_gradientCss(gg.type,gg.angle,gg.stops,an.hueShift);
+        else elm.style.background=_gradientCss(gg.type,an.angle,gg.stops,0);
+      };
+      if(a.gradient.animate){ var gStart=performance.now(); var gTick=function(){ if(!child.parentNode)return; renderGrad(child,a.gradient,(performance.now()-gStart)/1000); requestAnimationFrame(gTick);}; gTick(); }
+      else renderGrad(child,a.gradient,0);
+    } else {
     var staticMedia=a.mediaId?d.media.find(function(m){return m.id===a.mediaId;}):null;
     if(staticMedia&&staticMedia.type==='lottie'){
       try{
@@ -248,6 +260,7 @@ RuntimeEngine.prototype.build=function(){
       }catch(e){ console.warn('Lottie runtime error',e); }
     } else {
       el.innerHTML=self.assetMarkup(a);
+    }
     }
     layerEl.appendChild(el);
   });
@@ -285,6 +298,10 @@ RuntimeEngine.prototype.assetMarkup=function(asset){
     var shape = asset.shape; var sw = shape.strokeWidth, fill = shape.fill, stroke = shape.stroke, common = 'vector-effect:non-scaling-stroke;';
     if (shape.kind === 'ellipse') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><ellipse cx="50" cy="50" rx="'+(50-sw)+'" ry="'+(50-sw)+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
     if (shape.kind === 'triangle') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,4 96,96 4,96" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
+    if (shape.kind === 'diamond') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 97,50 50,97 3,50" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
+    if (shape.kind === 'pentagon') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 97,38 79,96 21,96 3,38" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
+    if (shape.kind === 'hexagon') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="25,5 75,5 98,50 75,95 25,95 2,50" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
+    if (shape.kind === 'star') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 61,36 96,36 68,56 79,91 50,70 21,91 32,56 4,36 39,36" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
     if (shape.kind === 'line') return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><line x1="2" y1="50" x2="98" y2="50" stroke="'+stroke+'" stroke-width="'+sw+'" stroke-linecap="round" style="'+common+'"/></svg>';
     return '<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><rect x="'+sw+'" y="'+sw+'" width="'+(100-sw*2)+'" height="'+(100-sw*2)+'" rx="'+shape.radius+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" style="'+common+'"/></svg>';
   }

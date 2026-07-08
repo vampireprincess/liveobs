@@ -29,6 +29,10 @@ export default function LottieTab() {
   const fullAnimRef = useRef<AnimationItem | null>(null);
   const scrubbingRef = useRef(false);
   const segmentLoopActiveRef = useRef(false);
+  const fullNormalLoopRef = useRef(false);
+  const fullRafRef = useRef<number | null>(null);
+  const fullFrameRef = useRef(0);
+  const fullPlaybackModeRef = useRef<"none" | "normal" | "segment">("none");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("Lottie animation");
@@ -56,7 +60,7 @@ export default function LottieTab() {
   const safeLoopFrom = clampFrame(Math.min(loopFrom, loopTo - 1), totalFrames);
   const safeLoopTo = clampFrame(Math.max(loopTo, safeLoopFrom + 1), totalFrames);
 
-  const syncFrame = (f: number) => setFrame(clampFrame(f, totalFrames));
+  const syncFrame = (f: number) => { const next = clampFrame(f, totalFrames); fullFrameRef.current = next; setFrame(next); };
 
   const loadJson = (parsed: any, nextName: string, mediaId: string | null = null) => {
     const total = Math.max(1, Math.round(parsed.op ?? 80));
@@ -114,6 +118,50 @@ export default function LottieTab() {
 
   useEffect(() => { animRef.current?.setSpeed(speed); fullAnimRef.current?.setSpeed(speed); }, [speed]);
   useEffect(() => { playing ? animRef.current?.play() : animRef.current?.pause(); }, [playing]);
+  useEffect(() => { fullFrameRef.current = frame; }, [frame]);
+
+  const stopFullPlayback = () => {
+    if (fullRafRef.current !== null) cancelAnimationFrame(fullRafRef.current);
+    fullRafRef.current = null;
+    fullPlaybackModeRef.current = "none";
+    segmentLoopActiveRef.current = false;
+    fullNormalLoopRef.current = false;
+    setFullPlaying(false);
+    setSegmentPlaying(false);
+  };
+
+  const startFullPlayback = (mode: "normal" | "segment") => {
+    const anim = fullAnimRef.current;
+    if (!anim) return;
+    stopFullPlayback();
+    const start = mode === "segment" ? safeLoopFrom : (frame >= totalFrames - 1 ? 0 : frame);
+    fullFrameRef.current = start;
+    setFrame(start);
+    anim.goToAndStop(start, true);
+    fullPlaybackModeRef.current = mode;
+    segmentLoopActiveRef.current = mode === "segment";
+    fullNormalLoopRef.current = mode === "normal";
+    setFullPlaying(true);
+    setSegmentPlaying(mode === "segment");
+    let last = performance.now();
+    const tick = (ts: number) => {
+      const dt = Math.max(0, Math.min(0.1, (ts - last) / 1000));
+      last = ts;
+      let next = fullFrameRef.current + dt * fps * speed;
+      if (mode === "segment") {
+        const length = Math.max(1, safeLoopTo - safeLoopFrom);
+        if (next >= safeLoopTo - 0.01) next = safeLoopFrom + ((next - safeLoopFrom) % length);
+      } else if (next >= totalFrames - 0.01) {
+        next = next % totalFrames;
+      }
+      fullFrameRef.current = next;
+      setFrame(Math.floor(next));
+      anim.goToAndStop(next, true);
+      fullRafRef.current = requestAnimationFrame(tick);
+    };
+    fullRafRef.current = requestAnimationFrame(tick);
+  };
+
 
   useEffect(() => {
     if (!showSegmentPopup || !fullRef.current || !edited) return;
@@ -123,15 +171,10 @@ export default function LottieTab() {
     fullAnimRef.current = anim;
     anim.setSpeed(speed);
     anim.setSubframe(true);
-    anim.addEventListener("enterFrame", (ev: any) => {
-      if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame);
-      const cur = ev.currentFrame;
-      if (segmentLoopActiveRef.current && cur >= safeLoopTo) anim.goToAndPlay(safeLoopFrom, true);
-    });
-    anim.addEventListener("complete", () => { segmentLoopActiveRef.current = false; setFullPlaying(false); setSegmentPlaying(false); });
+    anim.addEventListener("enterFrame", (ev: any) => { if (!scrubbingRef.current && fullPlaybackModeRef.current === "none") syncFrame(ev.currentTime ?? anim.currentFrame); });
     anim.addEventListener("DOMLoaded", () => anim.goToAndStop(frame, true));
     return () => { anim.destroy(); fullAnimRef.current = null; };
-  }, [showSegmentPopup, edited, speed, safeLoopFrom, safeLoopTo, segmentFlow]);
+  }, [showSegmentPopup, edited]);
 
   const loadFile = async (file?: File) => {
     if (!file) return;
@@ -144,30 +187,13 @@ export default function LottieTab() {
     if (target === "main" || target === "both") animRef.current?.goToAndStop(next, true);
     if (target === "full" || target === "both") fullAnimRef.current?.goToAndStop(next, true);
     setPlaying(false);
-    setFullPlaying(false);
-    setSegmentPlaying(false);
-    segmentLoopActiveRef.current = false;
+    stopFullPlayback();
   };
 
   const togglePlayStop = (target: PlayerTarget = "main") => {
     if (target === "full") {
-      const anim = fullAnimRef.current;
-      if (!anim) return;
-      const shouldPlay = anim.isPaused;
-      setFullPlaying(shouldPlay);
-      if (shouldPlay) {
-        segmentLoopActiveRef.current = false;
-        setSegmentPlaying(false);
-        const start = clampFrame(frame, totalFrames);
-        if (start >= totalFrames - 1) anim.goToAndStop(0, true);
-        else anim.goToAndStop(start, true);
-        anim.play();
-      } else {
-        segmentLoopActiveRef.current = false;
-        setSegmentPlaying(false);
-        anim.pause();
-        syncFrame(anim.currentFrame);
-      }
+      if (fullPlaybackModeRef.current === "normal") stopFullPlayback();
+      else startFullPlayback("normal");
       return;
     }
     const anim = animRef.current;
@@ -188,28 +214,14 @@ export default function LottieTab() {
   const stepFrame = (delta: number) => seek(frame + delta, showSegmentPopup ? "full" : "main");
 
   const playSegmentPreview = () => {
-    const anim = fullAnimRef.current;
-    if (!anim) return;
-    if (segmentLoopActiveRef.current && !anim.isPaused) {
-      anim.pause();
-      segmentLoopActiveRef.current = false;
-      setFullPlaying(false);
-      setSegmentPlaying(false);
-      syncFrame(anim.currentFrame);
-      return;
-    }
-    segmentLoopActiveRef.current = true;
-    setFullPlaying(true);
-    setSegmentPlaying(true);
-    anim.loop = false;
-    anim.goToAndPlay(safeLoopFrom, true);
+    if (fullPlaybackModeRef.current === "segment") stopFullPlayback();
+    else startFullPlayback("segment");
   };
 
   const playOutroOnce = () => {
     const anim = fullAnimRef.current;
     if (!anim) return;
-    segmentLoopActiveRef.current = false;
-    setSegmentPlaying(false);
+    stopFullPlayback();
     setFullPlaying(true);
     anim.playSegments([safeLoopTo, totalFrames], true);
   };
@@ -245,7 +257,7 @@ export default function LottieTab() {
       max={totalFrames}
       step={1}
       value={frame}
-      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; segmentLoopActiveRef.current = false; setPlaying(false); setFullPlaying(false); if (target !== "full") animRef.current?.pause(); else fullAnimRef.current?.pause(); }}
+      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; setPlaying(false); if (target !== "full") animRef.current?.pause(); else { stopFullPlayback(); fullAnimRef.current?.pause(); } }}
       onPointerUp={(e) => { e.stopPropagation(); scrubbingRef.current = false; }}
       onPointerCancel={() => { scrubbingRef.current = false; }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -283,7 +295,7 @@ export default function LottieTab() {
 
       {showSegmentPopup && <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-5 backdrop-blur" onPointerDown={(e) => e.stopPropagation()}>
         <div className="relative flex resize flex-col overflow-auto rounded-2xl border border-slate-700 bg-slate-950 p-4 shadow-2xl" style={{ width: "88vw", height: "90vh", minWidth: 520, minHeight: 520, maxWidth: "96vw", maxHeight: "96vh" }}>
-          <button type="button" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSegmentPopup(false); }} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowSegmentPopup(false); }} className="absolute right-4 top-4 z-[10002] rounded bg-slate-800 px-3 py-1 text-sm text-white hover:bg-slate-700">✕ Close</button>
+          <button type="button" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); stopFullPlayback(); setShowSegmentPopup(false); }} onClick={(e) => { e.preventDefault(); e.stopPropagation(); stopFullPlayback(); setShowSegmentPopup(false); }} className="absolute right-4 top-4 z-[10002] rounded bg-slate-800 px-3 py-1 text-sm text-white hover:bg-slate-700">✕ Close</button>
           <div ref={fullRef} className="min-h-[240px] flex-1 overflow-hidden rounded-xl bg-black/40" />
           <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
             <Timeline target="full" />

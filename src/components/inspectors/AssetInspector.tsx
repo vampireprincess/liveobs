@@ -27,7 +27,7 @@ export default function AssetInspector() {
   };
 
   const mediaRatio = (media?.width ?? a.width) / Math.max(1, media?.height ?? a.height);
-  const isMediaAsset = !a.shape && !!media;
+  const isMediaAsset = !a.shape && !!media && !a.gradient;
 
   const canvasFill = (fit: AssetFit) => {
     if (!isMediaAsset) { set({ x: 0, y: 0, width: W, height: H, fit }); return; }
@@ -69,32 +69,6 @@ export default function AssetInspector() {
     if (!a.shape) return;
     set({ shape: { ...a.shape, ...patch } });
   };
-
-  const isGradientLayerAsset = media?.type === "svg" && (media.name === "Gradient Layer" || a.name === "Gradient Layer");
-  if (isGradientLayerAsset) {
-    return (
-      <div>
-        <Panel title="Gradient Layer">
-          <Field label="Name"><TextInput value={a.name} onChange={(v) => set({ name: v })} /></Field>
-          <Field label="Layer"><Select value={a.layerId} onChange={(v) => set({ layerId: v })} options={data.layers.map((l) => ({ value: l.id, label: l.name }))} /></Field>
-          <div className="grid grid-cols-2 gap-1.5">
-            <Toggle label="Visible" checked={a.visible} onChange={(v) => set({ visible: v })} />
-            <Toggle label="Locked" checked={a.locked} onChange={(v) => set({ locked: v })} />
-          </div>
-          <p className="text-[10px] text-slate-500">This is a full-canvas gradient overlay asset. Use Layer, Opacity and Blend to combine it with images underneath.</p>
-        </Panel>
-        <Panel title="Gradient Overlay Controls">
-          <Slider label="Opacity" min={0} max={1} step={0.05} value={a.opacity} onChange={(v) => set({ opacity: v })} format={(v) => `${Math.round(v * 100)}%`} />
-          <Field label="Blend mode"><Select value={a.blend} onChange={(v) => set({ blend: v as BlendMode })} options={[{ value: "normal", label: "Normal" }, { value: "screen", label: "Screen" }, { value: "multiply", label: "Multiply" }, { value: "overlay", label: "Overlay" }, { value: "lighten", label: "Lighten" }, { value: "add", label: "Add / Glow" }]} /></Field>
-          <div className="grid grid-cols-2 gap-1.5">
-            <Btn onClick={() => set({ x: 0, y: 0, width: W, height: H, fit: "fill" })}>Fit full canvas</Btn>
-            <Btn onClick={() => useStore.getState().setTab("gradient")}>Edit gradient</Btn>
-          </div>
-          <Btn variant="danger" className="w-full" onClick={() => { useStore.getState().removeAsset(a.id); useStore.getState().select(null, null); }}>🗑 Delete gradient layer</Btn>
-        </Panel>
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -220,6 +194,10 @@ export default function AssetInspector() {
                   { value: "ellipse", label: "Ellipse" },
                   { value: "triangle", label: "Triangle" },
                   { value: "line", label: "Line" },
+                  { value: "diamond", label: "Diamond" },
+                  { value: "pentagon", label: "Pentagon" },
+                  { value: "hexagon", label: "Hexagon" },
+                  { value: "star", label: "Star" },
                 ]}
               />
             </Field>

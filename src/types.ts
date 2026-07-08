@@ -4,7 +4,7 @@ export type Vec2 = { x: number; y: number };
 
 export type BlendMode = "normal" | "screen" | "multiply" | "overlay" | "lighten" | "add";
 export type AssetFit = "contain" | "cover" | "fill" | "auto";
-export type ShapeKind = "rect" | "ellipse" | "triangle" | "line";
+export type ShapeKind = "rect" | "ellipse" | "triangle" | "line" | "diamond" | "pentagon" | "hexagon" | "star";
 
 export interface ShapeStyle {
   kind: ShapeKind;
@@ -128,6 +128,7 @@ export interface CanvasAsset {
   zoffset: number;
   blend: BlendMode;
   fit: AssetFit;
+  gradient?: GradientConfig;
   shadow?: DropShadow;
   animation?: BehaviorAnimation;
   animSpeed?: number;
@@ -291,6 +292,6 @@ export interface Project {
   data: ProjectData;
 }
 
-export type EditorTab = "assets" | "layers" | "random" | "paths" | "zones" | "particles" | "lottie" | "svg" | "gradient" | "audio" | "debug" | "export";
+export type EditorTab = "assets" | "layers" | "random" | "paths" | "zones" | "particles" | "shapes" | "lottie" | "svg" | "gradient" | "audio" | "debug" | "export";
 
 export type CanvasTool = "select" | "path" | "zone-rect" | "zone-ellipse" | "zone-poly" | "zone-triangle" | "shape-rect" | "shape-ellipse" | "shape-triangle" | "shape-line";
