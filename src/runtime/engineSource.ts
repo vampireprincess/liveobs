@@ -7,6 +7,17 @@ function samplePath(path, segments){
   if (pts.length < 2) return pts.map(function(p){return {x:p.x,y:p.y};});
   var out = [];
   var list = path.closed ? pts.concat([pts[0]]) : pts;
+  if((path.mode || 'curve') === 'angle') {
+    for (var li=0;li<list.length-1;li++){
+      var a=list[li], b=list[li+1];
+      for (var ls=0;ls<segments;ls++){
+        var lt=ls/segments;
+        out.push({x:a.x+(b.x-a.x)*lt,y:a.y+(b.y-a.y)*lt});
+      }
+    }
+    var ll=list[list.length-1]; out.push({x:ll.x,y:ll.y});
+    return out;
+  }
   for (var i=0;i<list.length-1;i++){
     var p0=list[i], p1=list[i+1];
     var c0={x:p0.x+p0.hOut.x,y:p0.y+p0.hOut.y};
@@ -18,7 +29,7 @@ function samplePath(path, segments){
       out.push({x:x,y:y});
     }
   }
-  out.push({x:pts[pts.length-1].x,y:pts[pts.length-1].y});
+  var last=list[list.length-1]; out.push({x:last.x,y:last.y});
   return out;
 }
 function pointInZone(x,y,z){

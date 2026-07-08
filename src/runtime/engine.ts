@@ -46,6 +46,20 @@ export function samplePath(path: MotionPath, segments = 48): { x: number; y: num
   if (pts.length < 2) return pts.map((p) => ({ x: p.x, y: p.y }));
   const out: { x: number; y: number }[] = [];
   const list = path.closed ? [...pts, pts[0]] : pts;
+
+  if ((path.mode ?? "curve") === "angle") {
+    for (let i = 0; i < list.length - 1; i++) {
+      const p0 = list[i], p1 = list[i + 1];
+      for (let s = 0; s < segments; s++) {
+        const t = s / segments;
+        out.push({ x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t });
+      }
+    }
+    const last = list[list.length - 1];
+    out.push({ x: last.x, y: last.y });
+    return out;
+  }
+
   for (let i = 0; i < list.length - 1; i++) {
     const p0 = list[i], p1 = list[i + 1];
     const c0 = { x: p0.x + p0.hOut.x, y: p0.y + p0.hOut.y };
@@ -57,7 +71,8 @@ export function samplePath(path: MotionPath, segments = 48): { x: number; y: num
       out.push({ x, y });
     }
   }
-  out.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y });
+  const last = list[list.length - 1];
+  out.push({ x: last.x, y: last.y });
   return out;
 }
 
@@ -68,8 +83,11 @@ export function pathSvgD(path: MotionPath): string {
   const list = path.closed ? [...pts, pts[0]] : pts;
   for (let i = 0; i < list.length - 1; i++) {
     const p0 = list[i], p1 = list[i + 1];
-    const c0x = p0.x + p0.hOut.x, c0y = p0.y + p0.hOut.y, c1x = p1.x + p1.hIn.x, c1y = p1.y + p1.hIn.y;
-    d += ` C ${c0x} ${c0y}, ${c1x} ${c1y}, ${p1.x} ${p1.y}`;
+    if ((path.mode ?? "curve") === "angle") d += ` L ${p1.x} ${p1.y}`;
+    else {
+      const c0x = p0.x + p0.hOut.x, c0y = p0.y + p0.hOut.y, c1x = p1.x + p1.hIn.x, c1y = p1.y + p1.hIn.y;
+      d += ` C ${c0x} ${c0y}, ${c1x} ${c1y}, ${p1.x} ${p1.y}`;
+    }
   }
   if (path.closed) d += " Z";
   return d;

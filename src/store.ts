@@ -155,6 +155,7 @@ export const useStore = create<AppState>((set, get) => {
             flipAxis: c.flipAxis ?? "horizontal",
           })),
           assets: p.data.assets.map((a) => ({ ...a, fit: a.fit ?? "contain" })),
+          paths: (p.data.paths || []).map((path: any) => ({ ...path, mode: path.mode ?? "curve" })),
           media: (p.data.media || []).map((m: any) => ({
             ...m,
             categoryId: m.categoryId ?? m.category ?? "cat-general",
