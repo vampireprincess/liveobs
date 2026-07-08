@@ -194,6 +194,10 @@ export default function AssetInspector() {
                   { value: "ellipse", label: "Ellipse" },
                   { value: "triangle", label: "Triangle" },
                   { value: "line", label: "Line" },
+                  { value: "diamond", label: "Diamond" },
+                  { value: "pentagon", label: "Pentagon" },
+                  { value: "hexagon", label: "Hexagon" },
+                  { value: "star", label: "Star" },
                 ]}
               />
             </Field>

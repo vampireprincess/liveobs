@@ -11,6 +11,7 @@ import type {
   RandomMemberOverride,
   AssetSchedule,
   AssetCategory,
+  ShapeKind,
 } from "./types";
 
 export const uid = () => nanoid(10);
@@ -152,7 +153,7 @@ export function newCanvasAsset(mediaId: string, layerId: string, media: MediaAss
   };
 }
 
-export function newShapeAsset(kind: "rect" | "ellipse" | "triangle" | "line", layerId: string, x: number, y: number): CanvasAsset {
+export function newShapeAsset(kind: ShapeKind, layerId: string, x: number, y: number): CanvasAsset {
   return {
     id: uid(),
     name: kind.charAt(0).toUpperCase() + kind.slice(1),

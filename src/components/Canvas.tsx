@@ -441,6 +441,10 @@ function ShapeView({ shape }: { shape: any }) {
     <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
       {shape.kind === "ellipse" && <ellipse cx="50" cy="50" rx={50 - sw} ry={50 - sw} fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
       {shape.kind === "triangle" && <polygon points="50,4 96,96 4,96" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "diamond" && <polygon points="50,3 97,50 50,97 3,50" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "pentagon" && <polygon points="50,3 97,38 79,96 21,96 3,38" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "hexagon" && <polygon points="25,5 75,5 98,50 75,95 25,95 2,50" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "star" && <polygon points="50,3 61,36 96,36 68,56 79,91 50,70 21,91 32,56 4,36 39,36" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
       {shape.kind === "line" && <line x1="2" y1="50" x2="98" y2="50" stroke={shape.stroke} strokeWidth={sw} strokeLinecap="round" style={common} />}
       {shape.kind === "rect" && <rect x={sw} y={sw} width={100 - sw * 2} height={100 - sw * 2} rx={shape.radius} fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
     </svg>
