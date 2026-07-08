@@ -302,12 +302,12 @@ export default function Canvas() {
       <CanvasToolbar selIds={selIds} assets={data.assets} W={W} H={H} />
       <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-md bg-slate-900/80 px-2 py-1 text-[11px] font-mono text-slate-400 backdrop-blur">{Math.round(scale * 100)}% · {W}×{H}</div>
       {runtimePreview && (
-        <div className="pointer-events-auto absolute right-3 top-3 z-40 rounded-md bg-emerald-900/70 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 backdrop-blur">
+        <div className="pointer-events-auto absolute right-3 top-3 z-40 min-w-[430px] rounded-md bg-emerald-900/70 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 backdrop-blur">
           <div className="mb-1.5 flex items-center gap-1.5">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
           </div>
-          <div className="flex max-w-[285px] flex-wrap items-center gap-1">
-            <span className="mr-1 text-emerald-200/70">Speed</span>
+          <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+            <span className="mr-1 shrink-0 text-emerald-200/70">Speed</span>
             {RUNTIME_SPEEDS.map((speed) => (
               <button
                 key={speed}
