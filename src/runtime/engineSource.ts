@@ -172,9 +172,14 @@ function _behaviorTransform(anim,t,speed,baseRot,baseSX,baseSY){
   return {transform:transform,filter:filter};
 }
 
+function _normalizedRuntimeData(data){
+  var d=JSON.parse(JSON.stringify(data));
+  if(!d.canvasWidth||!d.canvasHeight||d.canvasWidth<1000||d.canvasHeight<600){d.canvasWidth=1920;d.canvasHeight=1080;}
+  return d;
+}
 function RuntimeEngine(root, data, opts){
-  this.root=root; this.data=data; this.opts=opts||{};
-  this.mediaMap={}; for(var i=0;i<data.media.length;i++) this.mediaMap[data.media[i].id]=data.media[i].dataUrl;
+  this.root=root; this.data=_normalizedRuntimeData(data); this.opts=opts||{};
+  this.mediaMap={}; for(var i=0;i<this.data.media.length;i++) this.mediaMap[this.data.media[i].id]=this.data.media[i].dataUrl;
   this.layerEls={}; this.activeEvents=[]; this.groupTimers={}; this.particleState={};
   this.imgCache={}; this.dirState={}; this.bgRotEls=[]; this.bgRotIndex=0; this.running=false; this.lastTs=0;
   this.startTime=0; this.audioLevel=0;

@@ -3,10 +3,30 @@ import type { Project, ProjectData } from "../types";
 import { RUNTIME_ENGINE_SRC } from "./engineSource";
 import LOTTIE_WEB_SRC from "lottie-web/build/player/lottie.min.js?raw";
 
+function normalizeExportData(data: ProjectData): ProjectData {
+  const d = pruneUnusedMedia(data);
+  if (!d.canvasWidth || !d.canvasHeight || d.canvasWidth < 1000 || d.canvasHeight < 600) {
+    d.canvasWidth = 1920; d.canvasHeight = 1080;
+  }
+  return d;
+}
+
+function pruneUnusedMedia(data: ProjectData): ProjectData {
+  const d = structuredClone(data);
+  const used = new Set<string>();
+  d.assets.forEach((a) => { if (a.mediaId) used.add(a.mediaId); });
+  d.bgRotation.mediaIds.forEach((id) => used.add(id));
+  d.particles.forEach((p) => p.customMediaIds.forEach((id) => used.add(id)));
+  d.media = d.media.filter((m) => used.has(m.id));
+  d.bgRotation.mediaIds = d.bgRotation.mediaIds.filter((id) => used.has(id));
+  d.particles = d.particles.map((p) => ({ ...p, customMediaIds: p.customMediaIds.filter((id) => used.has(id)) }));
+  return d;
+}
+
 // Build a standalone HTML string that runs the scene in OBS Browser Source.
 // Everything (data + engine) is embedded — no server, no API, no editor UI.
 export function buildRuntimeHtml(project: Project, opts: { dataOverride?: ProjectData; externalRuntimeSrc?: string; externalLottieSrc?: string } = {}): string {
-  const data = opts.dataOverride ?? project.data;
+  const data = normalizeExportData(opts.dataOverride ?? project.data);
   const json = JSON.stringify(data);
   const lottieScript = opts.externalLottieSrc ? `<script src="${opts.externalLottieSrc}"></script>` : `<script>\n${LOTTIE_WEB_SRC}\n</script>`;
   const runtimeScript = opts.externalRuntimeSrc ? `<script src="${opts.externalRuntimeSrc}"></script>` : `<script>\n${RUNTIME_ENGINE_SRC}\n</script>`;
@@ -52,7 +72,7 @@ function escapeHtml(s: string): string {
 
 export async function exportZip(project: Project): Promise<void> {
   const zip = new JSZip();
-  const data = structuredClone(project.data);
+  const data = normalizeExportData(project.data);
   const assetFolder = zip.folder("assets");
   for (const media of data.media) {
     const parsed = dataUrlToFile(media.dataUrl);
@@ -83,7 +103,7 @@ export async function exportZip(project: Project): Promise<void> {
 }
 
 async function optimizeImagesForSingleHtml(data: ProjectData): Promise<ProjectData> {
-  const clone = structuredClone(data);
+  const clone = normalizeExportData(data);
   await Promise.all(clone.media.map(async (m) => {
     if (!m.dataUrl.startsWith('data:image/') || m.type === 'svg' || m.type === 'gif' || m.type === 'lottie') return;
     const used = clone.assets.filter((a) => a.mediaId === m.id);
