@@ -1,6 +1,6 @@
 import { useStore } from "../../store";
 import { Btn, Field, Panel, Select, TextInput, Toggle } from "../ui";
-import type { MotionPath, PathMode } from "../../types";
+import type { MotionPath, PathMode, PathEasing } from "../../types";
 
 export default function PathInspector() {
   const data = useStore((s) => s.data())!;
@@ -23,6 +23,21 @@ export default function PathInspector() {
             options={[
               { value: "curve", label: "Curves / Bezier" },
               { value: "angle", label: "Angles / Straight lines" },
+            ]}
+          />
+        </Field>
+        <Field label="Path easing">
+          <Select<PathEasing>
+            value={p.easing ?? "linear"}
+            onChange={(v) => set({ easing: v })}
+            options={[
+              { value: "linear", label: "Linear" },
+              { value: "ease-in", label: "Ease in" },
+              { value: "ease-out", label: "Ease out" },
+              { value: "ease-in-out", label: "Ease in/out" },
+              { value: "smoothstep", label: "Smoothstep" },
+              { value: "sine", label: "Sine" },
+              { value: "bounce", label: "Bounce out" },
             ]}
           />
         </Field>

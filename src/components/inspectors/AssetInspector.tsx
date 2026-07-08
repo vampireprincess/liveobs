@@ -1,6 +1,6 @@
 import { useStore } from "../../store";
 import { Btn, Field, NumberInput, Panel, Select, Slider, TextInput, Toggle } from "../ui";
-import type { AssetFit, BlendMode, ShapeKind, BehaviorAnimation } from "../../types";
+import type { AssetFit, BlendMode, ShapeKind, BehaviorAnimation, OneShotAnimation } from "../../types";
 
 const REF_POINTS = [
   [0, 0], [0.5, 0], [1, 0],
@@ -103,6 +103,9 @@ export default function AssetInspector() {
           <Toggle label="Visible" checked={a.visible} onChange={(v) => set({ visible: v })} />
           <Toggle label="Locked" checked={a.locked} onChange={(v) => set({ locked: v })} />
         </div>
+        {(media?.type === "lottie" || media?.type === "svg") && (
+          <Btn variant="primary" className="w-full" onClick={() => useStore.getState().setTab(media.type === "lottie" ? "lottie" : "svg")}>✏️ Edit {media.type.toUpperCase()}</Btn>
+        )}
         <div className="flex gap-1.5">
           <Btn className="flex-1" onClick={() => useStore.getState().duplicateAsset(a.id)}>⧉ Duplicate</Btn>
           <Btn variant="danger" onClick={() => { useStore.getState().removeAsset(a.id); useStore.getState().select(null, null); }}>🗑</Btn>
@@ -227,6 +230,14 @@ export default function AssetInspector() {
               { value: "wiggle", label: "Wiggling (Side-to-Side)" },
               { value: "skew", label: "Skewing" },
               { value: "blur", label: "Focus Pulse (Blur)" },
+              { value: "heartbeat", label: "Heartbeat" },
+              { value: "sway", label: "Sway" },
+              { value: "jelly", label: "Jelly / Squash" },
+              { value: "breathe", label: "Breathe" },
+              { value: "drift", label: "Drift" },
+              { value: "glitch", label: "Glitch" },
+              { value: "orbit", label: "Orbit" },
+              { value: "tada", label: "Tada" },
             ]}
           />
         </Field>
@@ -254,6 +265,48 @@ export default function AssetInspector() {
             </Field>
           </div>
         )}
+      </Panel>
+
+      <Panel title="Entrance Animation" defaultCollapsed>
+        <Field label="How asset appears">
+          <Select
+            value={a.entranceAnim || "none"}
+            onChange={(v) => set({ entranceAnim: v as OneShotAnimation })}
+            options={[
+              { value: "none", label: "None" },
+              { value: "fade", label: "Fade in" },
+              { value: "scale", label: "Scale in" },
+              { value: "pop", label: "Pop in" },
+              { value: "spin", label: "Spin in" },
+              { value: "slide-up", label: "Slide up" },
+              { value: "slide-down", label: "Slide down" },
+              { value: "slide-left", label: "Slide left" },
+              { value: "slide-right", label: "Slide right" },
+            ]}
+          />
+        </Field>
+        {(a.entranceAnim && a.entranceAnim !== "none") && <Slider label="Entrance duration" min={0.1} max={10} step={0.1} value={a.entranceDuration ?? 0.6} onChange={(v) => set({ entranceDuration: v })} format={(v) => `${v}s`} />}
+      </Panel>
+
+      <Panel title="Exit Animation" defaultCollapsed>
+        <Field label="How asset disappears">
+          <Select
+            value={a.exitAnim || "none"}
+            onChange={(v) => set({ exitAnim: v as OneShotAnimation })}
+            options={[
+              { value: "none", label: "None" },
+              { value: "fade", label: "Fade out" },
+              { value: "scale", label: "Scale out" },
+              { value: "pop", label: "Pop out" },
+              { value: "spin", label: "Spin out" },
+              { value: "slide-up", label: "Slide up" },
+              { value: "slide-down", label: "Slide down" },
+              { value: "slide-left", label: "Slide left" },
+              { value: "slide-right", label: "Slide right" },
+            ]}
+          />
+        </Field>
+        {(a.exitAnim && a.exitAnim !== "none") && <Slider label="Exit duration" min={0.1} max={10} step={0.1} value={a.exitDuration ?? 0.6} onChange={(v) => set({ exitDuration: v })} format={(v) => `${v}s`} />}
       </Panel>
 
       <Panel title="Glow / Drop Shadow" defaultCollapsed>
