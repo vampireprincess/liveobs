@@ -348,11 +348,12 @@ export default function Canvas() {
               const layerAssets = data.assets.filter(a => a.layerId === layer.id && a.visible).sort((a, b) => a.zoffset - b.zoffset);
               const layerParticles = data.particles.filter(p => p.layerId === layer.id && p.enabled);
               return (
-                <div key={layer.id} className="absolute inset-0 pointer-events-none" style={{ zIndex: (layerOrder[layer.id] ?? 0) * 10 }}>
+                <div key={layer.id} className="absolute inset-0 pointer-events-none">
                   {layerAssets.map((a) => {
                     const media = data.media.find((m) => m.id === a.mediaId);
                     const interactive = tool === "select" && !a.locked && layer.locked !== true;
-                    return <AssetView key={a.id} a={a} media={media} interactive={interactive} ringed={selIds.includes(a.id) && a.id !== selId} onPointerDown={(e) => interactive && onAssetPointerDown(e, a)} />;
+                    const renderZ = (layerOrder[layer.id] ?? 0) * 1000 + (a.zoffset ?? 0) + 10;
+                    return <AssetView key={a.id} a={a} media={media} renderZ={renderZ} interactive={interactive} ringed={selectableSelIds.includes(a.id) && a.id !== selId} onPointerDown={(e) => interactive && onAssetPointerDown(e, a)} />;
                   })}
                   {layerParticles.length > 0 && <EditorParticles W={W} H={H} layerId={layer.id} />}
                 </div>
@@ -497,7 +498,7 @@ function GradientAssetView({ a }: { a: CanvasAsset }) {
   return <div ref={ref} className="h-full w-full" />;
 }
 
-function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: CanvasAsset; media: any; interactive: boolean; ringed: boolean; onPointerDown: (e: React.PointerEvent) => void; }) {
+function AssetView({ a, media, renderZ, interactive, ringed, onPointerDown }: { a: CanvasAsset; media: any; renderZ: number; interactive: boolean; ringed: boolean; onPointerDown: (e: React.PointerEvent) => void; }) {
   const ref = useRef<HTMLDivElement>(null);
   const sx = a.flipH ? -a.scale : a.scale, sy = a.flipV ? -a.scale : a.scale;
   const baseFilter = a.shadow?.enabled ? `drop-shadow(${a.shadow.offsetX}px ${a.shadow.offsetY}px ${a.shadow.blur}px ${a.shadow.color})` : "";
@@ -508,7 +509,7 @@ function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: Canvas
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
   }, [a.animation, a.animSpeed, a.rotation, sx, sy, baseFilter]);
   return (
-    <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, opacity: a.opacity, mixBlendMode: a.blend === "add" ? "plus-lighter" : a.blend, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
+    <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, zIndex: renderZ, opacity: a.opacity, mixBlendMode: a.blend === "add" ? "plus-lighter" : a.blend, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
       {a.gradient ? <GradientAssetView a={a} /> : a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
     </div>
   );

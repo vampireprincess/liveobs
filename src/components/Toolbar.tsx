@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { exportZip, buildRuntimeHtml } from "../runtime/exportHtml";
+import { exportZip, exportSingleHtml } from "../runtime/exportHtml";
 import { Btn } from "./ui";
 import ProjectsModal from "./ProjectsModal";
 import TutorialModal from "./TutorialModal";
@@ -97,14 +97,7 @@ export default function Toolbar() {
         </Btn>
         <div className="flex bg-slate-800 rounded-md overflow-hidden border border-slate-700">
           <button onClick={() => exportZip(project)} className="px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700 border-r border-slate-700" title="Export ZIP (with assets)">📦 ZIP</button>
-          <button onClick={() => {
-            const blob = new Blob([buildRuntimeHtml(project)], { type: "text/html" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() + ".html";
-            a.click();
-          }} className="px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700" title="Export single standalone HTML">📄 HTML</button>
+          <button onClick={() => exportSingleHtml(project)} className="px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700" title="Export single standalone HTML">📄 HTML</button>
         </div>
       </div>
       {showProjects && <ProjectsModal onClose={() => setShowProjects(false)} />}

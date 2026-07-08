@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import type { Project } from "../types";
+import type { Project, ProjectData } from "../types";
 import { RUNTIME_ENGINE_SRC } from "./engineSource";
 import LOTTIE_WEB_SRC from "lottie-web/build/player/lottie.min.js?raw";
 
@@ -82,6 +82,39 @@ export async function exportZip(project: Project): Promise<void> {
   downloadBlob(blob, sanitize(project.name) + ".zip");
 }
 
+async function optimizeImagesForSingleHtml(data: ProjectData): Promise<ProjectData> {
+  const clone = structuredClone(data);
+  await Promise.all(clone.media.map(async (m) => {
+    if (!m.dataUrl.startsWith('data:image/') || m.type === 'svg' || m.type === 'gif' || m.type === 'lottie') return;
+    const used = clone.assets.filter((a) => a.mediaId === m.id);
+    if (!used.length) return;
+    const maxW = Math.max(...used.map((a) => Math.ceil(a.width * (a.scale || 1))));
+    const maxH = Math.max(...used.map((a) => Math.ceil(a.height * (a.scale || 1))));
+    if (!maxW || !maxH) return;
+    try {
+      const img = await loadImage(m.dataUrl);
+      if (img.naturalWidth <= maxW * 1.15 && img.naturalHeight <= maxH * 1.15) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, maxW); canvas.height = Math.max(1, maxH);
+      const ctx = canvas.getContext('2d'); if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const mime = m.dataUrl.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
+      m.dataUrl = canvas.toDataURL(mime.includes('png') ? 'image/png' : mime.includes('webp') ? 'image/webp' : 'image/jpeg', 0.86);
+      m.width = canvas.width; m.height = canvas.height;
+    } catch {}
+  }));
+  return clone;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 function dataUrlToFile(dataUrl: string): { bytes: Uint8Array; ext: string } | null {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -93,8 +126,9 @@ function dataUrlToFile(dataUrl: string): { bytes: Uint8Array; ext: string } | nu
   return { bytes, ext };
 }
 
-export function exportSingleHtml(project: Project): void {
-  const blob = new Blob([buildRuntimeHtml(project)], { type: "text/html" });
+export async function exportSingleHtml(project: Project): Promise<void> {
+  const optimized = await optimizeImagesForSingleHtml(project.data);
+  const blob = new Blob([buildRuntimeHtml(project, { dataOverride: optimized })], { type: "text/html" });
   downloadBlob(blob, sanitize(project.name) + ".html");
 }
 
