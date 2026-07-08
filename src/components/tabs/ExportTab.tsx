@@ -16,8 +16,26 @@ export default function ExportTab() {
   const project = useStore((s) => s.current())!;
   const upd = useStore.getState().update;
 
+  const forceRestoreCanvas = async () => {
+    const st = useStore.getState();
+    st.setRuntimePreview(false);
+    st.update((d) => {
+      const oldW = d.canvasWidth || 1920;
+      const oldH = d.canvasHeight || 1080;
+      d.canvasWidth = 1920;
+      d.canvasHeight = 1080;
+      d.assets.forEach((a) => {
+        const lookedLikeFullCanvas = Math.abs(a.x) < 1 && Math.abs(a.y) < 1 && Math.abs(a.width - oldW) < 2 && Math.abs(a.height - oldH) < 2;
+        if (lookedLikeFullCanvas) { a.width = 1920; a.height = 1080; }
+      });
+    });
+    await st.saveNow();
+    window.dispatchEvent(new CustomEvent('liveobs-force-canvas-resize'));
+  };
+
   const sizeKey = `${data.canvasWidth}x${data.canvasHeight}`;
   const known = SIZES.some((s) => s.value === sizeKey) ? sizeKey : "custom";
+  const usedMediaIds = new Set(data.assets.filter((a) => a.visible && data.layers.find((l) => l.id === a.layerId)?.visible !== false).map((a) => a.mediaId).filter(Boolean));
 
   return (
     <div>
@@ -44,7 +62,7 @@ export default function ExportTab() {
             <NumberInput value={data.canvasHeight} onChange={(v) => upd((d) => (d.canvasHeight = Math.max(240, v)))} />
           </Field>
         </div>
-        <Btn className="w-full" onClick={async () => { const st = useStore.getState(); st.setRuntimePreview(false); st.update((d) => { d.canvasWidth = 1920; d.canvasHeight = 1080; d.assets.forEach((a) => { if (a.name === "Gradient Layer" && a.x === 0 && a.y === 0) { a.width = 1920; a.height = 1080; } }); }); await new Promise((r) => setTimeout(r, 0)); await useStore.getState().saveNow(); }}>↩ Force restore canvas to 1920×1080</Btn>
+        <Btn className="w-full" onClick={forceRestoreCanvas}>↩ Force repair runtime/export canvas to 1920×1080</Btn>
         {!data.bgGradient?.enabled && (
           <Field label="Background Color">
             <input type="color" value={data.bgColor} onChange={(e) => upd((d) => (d.bgColor = e.target.value))} className="h-9 w-full rounded" />
@@ -97,7 +115,7 @@ export default function ExportTab() {
         <Slider label="Crossfade (sec)" min={0} max={10} step={0.5} value={data.bgRotation.crossfadeSec} onChange={(v) => upd((d) => (d.bgRotation.crossfadeSec = v))} />
         <Field label="Background images (from library)">
           <div className="grid grid-cols-4 gap-1.5">
-            {data.media.filter((m) => m.type !== "video").map((m) => {
+            {data.media.filter((m) => m.type !== "video" && usedMediaIds.has(m.id)).map((m) => {
               const on = data.bgRotation.mediaIds.includes(m.id);
               return (
                 <button
