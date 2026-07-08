@@ -5,9 +5,11 @@ import LOTTIE_WEB_SRC from "lottie-web/build/player/lottie.min.js?raw";
 
 // Build a standalone HTML string that runs the scene in OBS Browser Source.
 // Everything (data + engine) is embedded — no server, no API, no editor UI.
-export function buildRuntimeHtml(project: Project): string {
-  const data = project.data;
+export function buildRuntimeHtml(project: Project, opts: { dataOverride?: ProjectData; externalRuntimeSrc?: string; externalLottieSrc?: string } = {}): string {
+  const data = opts.dataOverride ?? project.data;
   const json = JSON.stringify(data);
+  const lottieScript = opts.externalLottieSrc ? `<script src="${opts.externalLottieSrc}"></script>` : `<script>\n${LOTTIE_WEB_SRC}\n</script>`;
+  const runtimeScript = opts.externalRuntimeSrc ? `<script src="${opts.externalRuntimeSrc}"></script>` : `<script>\n${RUNTIME_ENGINE_SRC}\n</script>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -20,15 +22,11 @@ export function buildRuntimeHtml(project: Project): string {
   #stage{transform-origin:center center;}
   img,video{-webkit-user-drag:none;user-select:none;}
 </style>
-<script>
-${LOTTIE_WEB_SRC}
-</script>
+${lottieScript}
 </head>
 <body>
 <div id="stage-wrap"><div id="stage"></div></div>
-<script>
-${RUNTIME_ENGINE_SRC}
-</script>
+${runtimeScript}
 <script>
 (function(){
   var DATA = ${json};
@@ -54,15 +52,22 @@ function escapeHtml(s: string): string {
 
 export async function exportZip(project: Project): Promise<void> {
   const zip = new JSZip();
-  zip.file("index.html", buildRuntimeHtml(project));
-  zip.file("runtime/runtime.js", RUNTIME_ENGINE_SRC);
-  zip.file("runtime/runtime.css", "html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}#stage-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}#stage{transform-origin:center center;}img,video{-webkit-user-drag:none;user-select:none;}");
-  zip.file("project.json", JSON.stringify(project.data, null, 2));
+  const data = structuredClone(project.data);
   const assetFolder = zip.folder("assets");
-  for (const media of project.data.media) {
+  for (const media of data.media) {
     const parsed = dataUrlToFile(media.dataUrl);
-    if (parsed) assetFolder?.file(`${media.id}-${sanitize(media.name)}.${parsed.ext}`, parsed.bytes);
+    if (parsed) {
+      const filename = `${media.id}-${sanitize(media.name)}.${parsed.ext}`;
+      assetFolder?.file(filename, parsed.bytes);
+      media.dataUrl = `assets/${filename}`;
+    }
   }
+
+  zip.file("index.html", buildRuntimeHtml(project, { dataOverride: data, externalRuntimeSrc: "runtime/runtime.js", externalLottieSrc: "runtime/lottie.min.js" }));
+  zip.file("runtime/runtime.js", RUNTIME_ENGINE_SRC);
+  zip.file("runtime/lottie.min.js", LOTTIE_WEB_SRC);
+  zip.file("runtime/runtime.css", "html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}#stage-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}#stage{transform-origin:center center;}img,video{-webkit-user-drag:none;user-select:none;}");
+  zip.file("project.json", JSON.stringify(data, null, 2));
   zip.file(
     "README.txt",
     `${project.name} — OBS Browser Source Layout\n\n` +

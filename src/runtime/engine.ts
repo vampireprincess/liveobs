@@ -559,10 +559,12 @@ export class RuntimeEngine {
     const w = templateAsset ? templateAsset.width : (media.width || 200);
     const h = templateAsset ? templateAsset.height : (media.height || 120);
     
-    const layerEl = this.layerEls[cat?.layerId || "layer-rand"] || this.root;
+    const targetLayerId = cat?.layerId || "layer-rand";
+    const targetLayerIndex = this.data.layers.findIndex((l) => l.id === targetLayerId);
+    const layerEl = this.root;
     const el = document.createElement("div");
     el.style.position = "absolute"; el.style.width = w + "px"; el.style.height = h + "px"; el.style.willChange = "transform, opacity, filter";
-    el.style.zIndex = String(templateAsset?.zoffset ?? 100);
+    el.style.zIndex = String((Math.max(0, targetLayerIndex) * 1000) + (templateAsset?.zoffset ?? 100) + 10);
     el.style.opacity = String(templateAsset?.opacity ?? 1);
     el.style.mixBlendMode = templateAsset?.blend === "add" ? "plus-lighter" : (templateAsset?.blend || "normal");
     

@@ -509,9 +509,11 @@ RuntimeEngine.prototype.triggerMedia=function(mediaId){
   var templateAsset=this.data.assets.find(function(a){return a.mediaId===mediaId;});
   var w=templateAsset?templateAsset.width:(media.width||200);
   var h=templateAsset?templateAsset.height:(media.height||120);
-  var layerEl=this.layerEls[cat&&cat.layerId||'layer-rand']||this.root;
+  var targetLayerId=(cat&&cat.layerId)||'layer-rand';
+  var targetLayerIndex=this.data.layers.findIndex(function(l){return l.id===targetLayerId;});
+  var layerEl=this.root;
   var el=document.createElement('div'); el.style.position='absolute'; el.style.width=w+'px'; el.style.height=h+'px'; el.style.willChange='transform, opacity, filter';
-  el.style.zIndex=String(templateAsset&&templateAsset.zoffset!==undefined?templateAsset.zoffset:100);
+  el.style.zIndex=String((Math.max(0,targetLayerIndex)*1000)+((templateAsset&&templateAsset.zoffset!==undefined)?templateAsset.zoffset:100)+10);
   el.style.opacity=String(templateAsset&&templateAsset.opacity!==undefined?templateAsset.opacity:1);
   el.style.mixBlendMode=templateAsset&&templateAsset.blend==='add'?'plus-lighter':((templateAsset&&templateAsset.blend)||'normal');
   if(poly.length>0) el.style.transform='translate('+(poly[0].x-w/2)+'px,'+(poly[0].y-h/2)+'px)';
