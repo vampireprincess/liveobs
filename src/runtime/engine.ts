@@ -583,11 +583,13 @@ export class RuntimeEngine {
     if (poly.length > 0) el.style.transform = `translate(${poly[0].x - w / 2}px, ${poly[0].y - h / 2}px)`;
     
     if (media.type === "lottie") {
-      try { 
-        const animData = JSON.parse(atob(media.dataUrl.split(",")[1])); 
-        const anim = lottie.loadAnimation({ container: el, renderer: "svg", loop: true, autoplay: true, animationData: animData });
+      try {
+        const isData = media.dataUrl.startsWith("data:");
+        const anim = lottie.loadAnimation(isData
+          ? { container: el, renderer: "svg", loop: true, autoplay: true, animationData: JSON.parse(atob(media.dataUrl.split(",")[1])) }
+          : { container: el, renderer: "svg", loop: true, autoplay: true, path: media.dataUrl });
         anim.addEventListener("complete", () => anim.goToAndPlay(0, true));
-        window.setInterval(() => { if (el.isConnected && anim.isPaused) anim.play(); }, 1000); 
+        window.setInterval(() => { if (el.isConnected && anim.isPaused) anim.play(); }, 1000);
       } catch (e) {}
     } else if (media.type === "video") {
       const safeUrl = String(media.dataUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

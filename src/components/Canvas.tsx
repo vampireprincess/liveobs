@@ -343,21 +343,18 @@ export default function Canvas() {
         {!runtimePreview && <GradientBackgroundLayer />}
         {!runtimePreview && (
           <>
-            {data.layers.map((layer) => {
-              if (!layer.visible) return null;
+            {data.layers.filter((layer) => layer.visible).flatMap((layer) => {
               const layerAssets = data.assets.filter(a => a.layerId === layer.id && a.visible).sort((a, b) => a.zoffset - b.zoffset);
+              return layerAssets.map((a) => {
+                const media = data.media.find((m) => m.id === a.mediaId);
+                const interactive = tool === "select" && !a.locked && layer.locked !== true;
+                const renderZ = (layerOrder[layer.id] ?? 0) * 1000 + (a.zoffset ?? 0) + 10;
+                return <AssetView key={a.id} a={a} media={media} renderZ={renderZ} interactive={interactive} ringed={selectableSelIds.includes(a.id) && a.id !== selId} onPointerDown={(e) => interactive && onAssetPointerDown(e, a)} />;
+              });
+            })}
+            {data.layers.filter((layer) => layer.visible).flatMap((layer) => {
               const layerParticles = data.particles.filter(p => p.layerId === layer.id && p.enabled);
-              return (
-                <div key={layer.id} className="absolute inset-0 pointer-events-none">
-                  {layerAssets.map((a) => {
-                    const media = data.media.find((m) => m.id === a.mediaId);
-                    const interactive = tool === "select" && !a.locked && layer.locked !== true;
-                    const renderZ = (layerOrder[layer.id] ?? 0) * 1000 + (a.zoffset ?? 0) + 10;
-                    return <AssetView key={a.id} a={a} media={media} renderZ={renderZ} interactive={interactive} ringed={selectableSelIds.includes(a.id) && a.id !== selId} onPointerDown={(e) => interactive && onAssetPointerDown(e, a)} />;
-                  })}
-                  {layerParticles.length > 0 && <EditorParticles W={W} H={H} layerId={layer.id} zIndex={(layerOrder[layer.id] ?? 0) * 1000 + 500} />}
-                </div>
-              );
+              return layerParticles.length ? [<EditorParticles key={`particles-${layer.id}`} W={W} H={H} layerId={layer.id} zIndex={(layerOrder[layer.id] ?? 0) * 1000 + 500} />] : [];
             })}
             {selectableSelIds.length > 1 && tool === "select" && (
               <MultiSelectionBox
