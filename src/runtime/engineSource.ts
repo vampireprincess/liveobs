@@ -528,6 +528,7 @@ RuntimeEngine.prototype.triggerMedia=function(mediaId){
 RuntimeEngine.prototype.updateEvents=function(now){
   var scaledNow=this.scaledNow(now);
   for(var i=this.activeEvents.length-1;i>=0;i--){
+    var ev=this.activeEvents[i];
     var rawT=(scaledNow-ev.start)/ev.duration;
     if(rawT>=1){ev.el.remove();this.activeEvents.splice(i,1);continue;}
     var t=_ease01(rawT, ev.easing);

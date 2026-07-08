@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import lottie, { type AnimationItem } from "lottie-web";
 import { uid, newCanvasAsset, defaultSchedule } from "../../factory";
 import { useStore } from "../../store";
@@ -38,6 +38,7 @@ export default function LottieTab() {
   const [map, setMap] = useState<Record<string, string>>({});
   const [playing, setPlaying] = useState(false);
   const [fullPlaying, setFullPlaying] = useState(false);
+  const [segmentPlaying, setSegmentPlaying] = useState(false);
   const [loopMode, setLoopMode] = useState<LoopMode>("loop");
   const [loopCount, setLoopCount] = useState(3);
   const [speed, setSpeed] = useState(1);
@@ -48,7 +49,7 @@ export default function LottieTab() {
   const [loopTo, setLoopTo] = useState(80);
   const [segmentSaved, setSegmentSaved] = useState(false);
 
-  const edited = json ? recolorLottie(json, map) : null;
+  const edited = useMemo(() => (json ? recolorLottie(json, map) : null), [json, map]);
   const totalFrames = Math.max(1, Math.round(edited?.op ?? 1));
   const fps = Math.max(1, edited?.fr ?? 60);
   const seconds = frame / fps;
@@ -68,6 +69,7 @@ export default function LottieTab() {
     setFrame(0);
     setPlaying(false);
     setFullPlaying(false);
+    setSegmentPlaying(false);
     setLoopFrom(Math.min(20, total - 1));
     setLoopTo(total);
     setSegmentSaved(false);
@@ -124,9 +126,9 @@ export default function LottieTab() {
     anim.addEventListener("enterFrame", (ev: any) => {
       if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame);
       const cur = ev.currentFrame;
-      if (segmentFlow === "intro-loop" && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
-      if (segmentFlow === "loop-outro" && segmentLoopActiveRef.current && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
+      if (segmentLoopActiveRef.current && cur >= safeLoopTo) anim.goToAndPlay(safeLoopFrom, true);
     });
+    anim.addEventListener("complete", () => { segmentLoopActiveRef.current = false; setFullPlaying(false); setSegmentPlaying(false); });
     anim.addEventListener("DOMLoaded", () => anim.goToAndStop(frame, true));
     return () => { anim.destroy(); fullAnimRef.current = null; };
   }, [showSegmentPopup, edited, speed, safeLoopFrom, safeLoopTo, segmentFlow]);
@@ -143,20 +145,44 @@ export default function LottieTab() {
     if (target === "full" || target === "both") fullAnimRef.current?.goToAndStop(next, true);
     setPlaying(false);
     setFullPlaying(false);
+    setSegmentPlaying(false);
+    segmentLoopActiveRef.current = false;
   };
 
   const togglePlayStop = (target: PlayerTarget = "main") => {
     if (target === "full") {
-      const shouldPlay = fullAnimRef.current?.isPaused ?? !fullPlaying;
+      const anim = fullAnimRef.current;
+      if (!anim) return;
+      const shouldPlay = anim.isPaused;
       setFullPlaying(shouldPlay);
-      if (shouldPlay) { segmentLoopActiveRef.current = false; if ((fullAnimRef.current?.currentFrame ?? 0) >= totalFrames - 1) fullAnimRef.current?.goToAndStop(0, true); fullAnimRef.current?.play(); }
-      else { segmentLoopActiveRef.current = false; fullAnimRef.current?.pause(); }
+      if (shouldPlay) {
+        segmentLoopActiveRef.current = false;
+        setSegmentPlaying(false);
+        const start = clampFrame(frame, totalFrames);
+        if (start >= totalFrames - 1) anim.goToAndStop(0, true);
+        else anim.goToAndStop(start, true);
+        anim.play();
+      } else {
+        segmentLoopActiveRef.current = false;
+        setSegmentPlaying(false);
+        anim.pause();
+        syncFrame(anim.currentFrame);
+      }
       return;
     }
-    const shouldPlay = animRef.current?.isPaused ?? !playing;
+    const anim = animRef.current;
+    if (!anim) return;
+    const shouldPlay = anim.isPaused;
     setPlaying(shouldPlay);
-    if (shouldPlay) { if ((animRef.current?.currentFrame ?? 0) >= totalFrames - 1) animRef.current?.goToAndStop(0, true); animRef.current?.play(); }
-    else animRef.current?.pause();
+    if (shouldPlay) {
+      const start = clampFrame(frame, totalFrames);
+      if (start >= totalFrames - 1) anim.goToAndStop(0, true);
+      else anim.goToAndStop(start, true);
+      anim.play();
+    } else {
+      anim.pause();
+      syncFrame(anim.currentFrame);
+    }
   };
 
   const stepFrame = (delta: number) => seek(frame + delta, showSegmentPopup ? "full" : "main");
@@ -164,16 +190,26 @@ export default function LottieTab() {
   const playSegmentPreview = () => {
     const anim = fullAnimRef.current;
     if (!anim) return;
+    if (segmentLoopActiveRef.current && !anim.isPaused) {
+      anim.pause();
+      segmentLoopActiveRef.current = false;
+      setFullPlaying(false);
+      setSegmentPlaying(false);
+      syncFrame(anim.currentFrame);
+      return;
+    }
     segmentLoopActiveRef.current = true;
     setFullPlaying(true);
-    if (segmentFlow === "intro-loop") anim.playSegments([[0, safeLoopFrom], [safeLoopFrom, safeLoopTo]], true);
-    else anim.playSegments([safeLoopFrom, safeLoopTo], true);
+    setSegmentPlaying(true);
+    anim.loop = false;
+    anim.goToAndPlay(safeLoopFrom, true);
   };
 
   const playOutroOnce = () => {
     const anim = fullAnimRef.current;
     if (!anim) return;
     segmentLoopActiveRef.current = false;
+    setSegmentPlaying(false);
     setFullPlaying(true);
     anim.playSegments([safeLoopTo, totalFrames], true);
   };
@@ -252,7 +288,7 @@ export default function LottieTab() {
           <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
             <Timeline target="full" />
             <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-300"><span>Frame: <b>{frame}/{totalFrames}</b></span><span>Seconds: <b>{seconds.toFixed(2)}s</b></span><span>FPS: <b>{fps}</b></span></div>
-            <div className="mt-2 grid grid-cols-5 gap-2"><Btn onClick={() => stepFrame(-1)}>◀ Frame</Btn><Btn variant="primary" onClick={() => togglePlayStop("full")}>{fullPlaying ? "⏸ Stop" : "▶ Play"}</Btn><Btn onClick={() => stepFrame(1)}>Frame ▶</Btn><Btn onClick={playSegmentPreview}>Play segment</Btn>{segmentFlow === "loop-outro" && <Btn onClick={playOutroOnce}>Play outro 1x</Btn>}</div>
+            <div className="mt-2 grid grid-cols-5 gap-2"><Btn onClick={() => stepFrame(-1)}>◀ Frame</Btn><Btn variant="primary" onClick={() => togglePlayStop("full")}>{fullPlaying ? "⏸ Stop" : "▶ Play"}</Btn><Btn onClick={() => stepFrame(1)}>Frame ▶</Btn><Btn onClick={playSegmentPreview}>{segmentPlaying ? "Stop segment" : "Play segment"}</Btn>{segmentFlow === "loop-outro" && <Btn onClick={playOutroOnce}>Play outro 1x</Btn>}</div>
             <div className="mt-2 flex flex-wrap gap-1">{SPEEDS.map((s) => <button key={s} onClick={() => setSpeed(s)} className={`rounded px-2 py-1 text-[10px] ${speed === s ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{s}x</button>)}</div>
             <div className="mt-3 grid grid-cols-4 gap-2">
               <Field label="Segment style"><Select<SegmentFlow> value={segmentFlow} onChange={setSegmentFlow} options={[{ value: "intro-loop", label: "Intro then loop" }, { value: "loop-outro", label: "Loop then outro" }]} /></Field>
