@@ -57,7 +57,18 @@ export default function SvgTab() {
     if (!edited) return;
     const size = svgSize(edited);
     const patch = { name, dataUrl: toDataUrl("image/svg+xml", edited), width: size.width, height: size.height };
-    if (editingMediaId) { useStore.getState().update((d) => { const m = d.media.find((x) => x.id === editingMediaId); if (m) Object.assign(m, patch); }); return; }
+    if (editingMediaId) {
+      useStore.getState().update((d) => {
+        const m = d.media.find((x) => x.id === editingMediaId);
+        if (m) Object.assign(m, patch);
+        d.assets.forEach((a) => {
+          if (a.mediaId === editingMediaId && a.gradient) {
+            a.gradient.stops = a.gradient.stops.map((stop) => ({ ...stop, color: map[stop.color.toLowerCase()] ?? map[stop.color] ?? stop.color }));
+          }
+        });
+      });
+      return;
+    }
     const media: MediaAsset = { id: uid(), name, type: "svg", dataUrl: patch.dataUrl, width: size.width, height: size.height, categoryId: "static-assets", schedule: defaultSchedule(), inLibrary: false };
     useStore.getState().addMedia(media);
     if (place) {

@@ -90,7 +90,16 @@ export default function GradientBar({ stops, onChange }: Props) {
               activeId === s.id ? "border-white ring-2 ring-violet-400" : "border-white/70"
             }`}
             style={{ left: `${s.offset * 100}%`, background: s.color }}
-          />
+          >
+            <input
+              type="color"
+              value={s.color}
+              title="Click to edit color"
+              onPointerDown={(e) => { e.stopPropagation(); setActiveId(s.id); }}
+              onChange={(e) => setColor(s.id, e.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </div>
         ))}
       </div>
 

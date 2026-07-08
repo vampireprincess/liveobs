@@ -307,6 +307,8 @@ export default function Canvas() {
   if (!data) return null;
   const selAsset = selKind === "asset" ? data.assets.find((a) => a.id === selId) : undefined;
   const layerOrder = Object.fromEntries(data.layers.map((l, i) => [l.id, i]));
+  const layerLocked = Object.fromEntries(data.layers.map((l) => [l.id, !!l.locked]));
+  const selectableSelIds = selIds.filter((id) => { const a = data.assets.find(x => x.id === id); return a && !a.locked && !layerLocked[a.layerId]; });
 
   return (
     <div ref={containerRef} className="relative flex h-full w-full items-center justify-center overflow-auto bg-[#0a0e1a] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.05)_1px,transparent_0)] [background-size:24px_24px]">
@@ -356,26 +358,26 @@ export default function Canvas() {
                 </div>
               );
             })}
-            {selIds.filter((id) => { const a = data.assets.find(x => x.id === id); return a && !a.locked; }).length > 1 && tool === "select" && (
+            {selectableSelIds.length > 1 && tool === "select" && (
               <MultiSelectionBox
-                assets={data.assets.filter(a => selIds.includes(a.id) && !a.locked)}
+                assets={data.assets.filter(a => selectableSelIds.includes(a.id))}
                 onResizeDown={(handle, e) => {
                   e.stopPropagation(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selIds.includes(a.id) && !a.locked); if (!sel.length) return;
+                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selectableSelIds.includes(a.id)); if (!sel.length) return;
                   const minX = Math.min(...sel.map(a => a.x)), minY = Math.min(...sel.map(a => a.y)), maxX = Math.max(...sel.map(a => a.x + a.width)), maxY = Math.max(...sel.map(a => a.y + a.height));
                   const p = toCanvas(e.clientX, e.clientY);
                   setDrag({ mode: "multi-resize", handles: handle, sx: p.x, sy: p.y, ox: minX, oy: minY, ow: maxX - minX, oh: maxY - minY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2, origs: sel.map(a => ({ id: a.id, x: a.x, y: a.y, width: a.width, height: a.height })) });
                 }}
                 onRotateDown={(e) => {
                   e.stopPropagation(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selIds.includes(a.id) && !a.locked); if (!sel.length) return;
+                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selectableSelIds.includes(a.id)); if (!sel.length) return;
                   const minX = Math.min(...sel.map(a => a.x)), minY = Math.min(...sel.map(a => a.y)), maxX = Math.max(...sel.map(a => a.x + a.width)), maxY = Math.max(...sel.map(a => a.y + a.height));
                   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, p = toCanvas(e.clientX, e.clientY), startAngle = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI;
                   setDrag({ mode: "multi-rotate", cx, cy, startAngle, origs: sel.map(a => ({ id: a.id, x: a.x, y: a.y, width: a.width, height: a.height, rot: a.rotation })) });
                 }}
               />
             )}
-            {selIds.length === 1 && selAsset && tool === "select" && <SelectionBox a={selAsset} isMulti={false} onResizeDown={onResizeDown} onRotateDown={onRotateDown} />}
+            {selectableSelIds.length === 1 && selAsset && selectableSelIds[0] === selAsset.id && tool === "select" && <SelectionBox a={selAsset} isMulti={false} onResizeDown={onResizeDown} onRotateDown={onRotateDown} />}
             {drag?.mode === "marquee" && <div className="absolute border border-violet-400 bg-violet-500/20" style={{ left: Math.min(drag.sx, drag.cx), top: Math.min(drag.sy, drag.cy), width: Math.abs(drag.cx - drag.sx), height: Math.abs(drag.cy - drag.sy), pointerEvents: "none", zIndex: 9999 }} />}
             {snapLines.x !== undefined && <div className="absolute top-0 bottom-0 border-l border-violet-500 z-[9999] pointer-events-none" style={{left: snapLines.x}} />}
             {snapLines.y !== undefined && <div className="absolute left-0 right-0 border-t border-violet-500 z-[9999] pointer-events-none" style={{top: snapLines.y}} />}
