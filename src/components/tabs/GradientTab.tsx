@@ -102,7 +102,7 @@ export default function GradientTab() {
         const media = d.media.find((m) => m.id === existingMediaId);
         if (media) Object.assign(media, { dataUrl, width: d.canvasWidth, height: d.canvasHeight });
         const asset = d.assets.find((a) => a.id === existingAsset.id);
-        if (asset) Object.assign(asset, { x: 0, y: 0, width: d.canvasWidth, height: d.canvasHeight, fit: "fill" });
+        if (asset) Object.assign(asset, { gradient: structuredClone(g), fit: "fill" });
       });
       useStore.getState().select("asset", existingAsset.id);
       return;
@@ -121,7 +121,7 @@ export default function GradientTab() {
     useStore.getState().addMedia(media);
     const layer = data.layers.find((l) => l.id === "layer-bg") ?? data.layers[0];
     const asset = newCanvasAsset(media.id, layer.id, media);
-    Object.assign(asset, { x: 0, y: 0, width: data.canvasWidth, height: data.canvasHeight, name: "Gradient Layer", fit: "fill" as const, opacity: 0.65, blend: "overlay" as const });
+    Object.assign(asset, { x: 0, y: 0, width: data.canvasWidth, height: data.canvasHeight, name: "Gradient Layer", fit: "fill" as const, opacity: 0.65, blend: "overlay" as const, gradient: structuredClone(g) });
     useStore.getState().addAsset(asset);
     useStore.getState().select("asset", asset.id);
   };

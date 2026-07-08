@@ -128,6 +128,7 @@ export interface CanvasAsset {
   zoffset: number;
   blend: BlendMode;
   fit: AssetFit;
+  gradient?: GradientConfig;
   shadow?: DropShadow;
   animation?: BehaviorAnimation;
   animSpeed?: number;

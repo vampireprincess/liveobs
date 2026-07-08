@@ -244,6 +244,25 @@ export class RuntimeEngine {
         const s = a.shadow; const sh = `drop-shadow(${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color})`;
         el.style.filter = a.animation === "blur" ? el.style.filter + " " + sh : sh;
       }
+      if (a.gradient) {
+        const child = document.createElement("div");
+        child.style.width = "100%"; child.style.height = "100%";
+        el.appendChild(child);
+        const renderGradient = (elapsed: number) => {
+          const gg = a.gradient!;
+          if (!gg.animate) { child.style.background = gradientCss(gg.type, gg.angle, gg.stops); return; }
+          const anim = computeGradientAnim(gg, elapsed);
+          const animType = gg.animType || (gg.type === "linear" ? "rotation" : "hue");
+          if (animType === "panning") { child.style.backgroundSize = gg.type === "linear" ? "220% 220%" : "100% 100%"; child.style.backgroundPosition = `${anim.panPercent}% 50%`; child.style.background = gradientCss(gg.type, gg.angle, gg.stops); }
+          else if (animType === "hue") child.style.background = gradientCss(gg.type, gg.angle, gg.stops, anim.hueShift);
+          else child.style.background = gradientCss(gg.type, anim.angle, gg.stops);
+        };
+        if (a.gradient.animate) {
+          const start = performance.now();
+          const tick = () => { if (!child.isConnected) return; renderGradient((performance.now() - start) / 1000); requestAnimationFrame(tick); };
+          tick();
+        } else renderGradient(0);
+      } else {
       const staticMedia = a.mediaId ? this.data.media.find((m) => m.id === a.mediaId) : undefined;
       if (staticMedia?.type === "lottie") {
         try {
@@ -256,6 +275,7 @@ export class RuntimeEngine {
         } catch (e) { console.warn("Lottie runtime error", e); }
       } else {
         el.innerHTML = this.assetMarkup(a);
+      }
       }
       layerEl.appendChild(el);
     }

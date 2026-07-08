@@ -238,6 +238,18 @@ RuntimeEngine.prototype.build=function(){
         var s2=a.shadow; el.style.filter='drop-shadow('+s2.offsetX+'px '+s2.offsetY+'px '+s2.blur+'px '+s2.color+')';
       }
     }
+    if(a.gradient){
+      var child=document.createElement('div'); child.style.width='100%'; child.style.height='100%'; el.appendChild(child);
+      var renderGrad=function(elm,gg,elapsed){
+        if(!gg.animate){elm.style.background=_gradientCss(gg.type,gg.angle,gg.stops,0);return;}
+        var an=_computeGradAnim(gg,elapsed); var at=gg.animType||(gg.type==='linear'?'rotation':'hue');
+        if(at==='panning'){elm.style.backgroundSize=gg.type==='linear'?'220% 220%':'100% 100%'; elm.style.backgroundPosition=an.panPercent+'% 50%'; elm.style.background=_gradientCss(gg.type,gg.angle,gg.stops,0);}
+        else if(at==='hue') elm.style.background=_gradientCss(gg.type,gg.angle,gg.stops,an.hueShift);
+        else elm.style.background=_gradientCss(gg.type,an.angle,gg.stops,0);
+      };
+      if(a.gradient.animate){ var gStart=performance.now(); var gTick=function(){ if(!child.parentNode)return; renderGrad(child,a.gradient,(performance.now()-gStart)/1000); requestAnimationFrame(gTick);}; gTick(); }
+      else renderGrad(child,a.gradient,0);
+    } else {
     var staticMedia=a.mediaId?d.media.find(function(m){return m.id===a.mediaId;}):null;
     if(staticMedia&&staticMedia.type==='lottie'){
       try{
@@ -248,6 +260,7 @@ RuntimeEngine.prototype.build=function(){
       }catch(e){ console.warn('Lottie runtime error',e); }
     } else {
       el.innerHTML=self.assetMarkup(a);
+    }
     }
     layerEl.appendChild(el);
   });

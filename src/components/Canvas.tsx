@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useStore } from "../store";
 import type { CanvasAsset, MotionPath, Zone, RuntimePreviewSpeed, ProjectData } from "../types";
 import { RuntimeEngine, pathSvgD, behaviorTransform } from "../runtime/engine";
+import { computeGradientAnim, gradientCss } from "../gradientMath";
 import { uid, newShapeAsset } from "../factory";
 import EditorParticles from "./EditorParticles";
 import CanvasToolsBar from "./CanvasToolsBar";
@@ -228,7 +229,7 @@ export default function Canvas() {
         let { ox, oy, ow, oh } = d; const dx = p.x - d.sx, dy = p.y - d.sy;
         const curData = st.data()!;
         const asset = curData.assets.find(a => a.id === d.id);
-        const lockRatio = !!asset && (!asset.shape || e.shiftKey);
+        const lockRatio = !!asset && (((!asset.shape && !asset.gradient) || e.shiftKey));
         const ratio = asset ? assetAspectRatio(asset, curData) : d.ow / Math.max(1, d.oh);
         const minW = 20, minH = Math.max(20, minW / Math.max(0.01, ratio));
 
@@ -458,6 +459,38 @@ function LottieView({ dataUrl }: { dataUrl: string }) {
   return <div ref={ref} className="h-full w-full" />;
 }
 
+function GradientAssetView({ a }: { a: CanvasAsset }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const g = a.gradient;
+    const el = ref.current;
+    if (!g || !el) return;
+    if (!g.animate) {
+      el.style.background = gradientCss(g.type, g.angle, g.stops);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick);
+      const anim = computeGradientAnim(g, (ts - start) / 1000);
+      const animType = g.animType || (g.type === "linear" ? "rotation" : "hue");
+      if (animType === "panning") {
+        el.style.backgroundSize = g.type === "linear" ? "220% 220%" : "100% 100%";
+        el.style.backgroundPosition = `${anim.panPercent}% 50%`;
+        el.style.background = gradientCss(g.type, g.angle, g.stops);
+      } else if (animType === "hue") {
+        el.style.background = gradientCss(g.type, g.angle, g.stops, anim.hueShift);
+      } else {
+        el.style.background = gradientCss(g.type, anim.angle, g.stops);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [a.gradient]);
+  return <div ref={ref} className="h-full w-full" />;
+}
+
 function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: CanvasAsset; media: any; interactive: boolean; ringed: boolean; onPointerDown: (e: React.PointerEvent) => void; }) {
   const ref = useRef<HTMLDivElement>(null);
   const sx = a.flipH ? -a.scale : a.scale, sy = a.flipV ? -a.scale : a.scale;
@@ -469,8 +502,8 @@ function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: Canvas
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
   }, [a.animation, a.animSpeed, a.rotation, sx, sy, baseFilter]);
   return (
-    <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, opacity: a.opacity, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
-      {a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
+    <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, opacity: a.opacity, mixBlendMode: a.blend === "add" ? "plus-lighter" : a.blend, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
+      {a.gradient ? <GradientAssetView a={a} /> : a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
     </div>
   );
 }

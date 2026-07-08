@@ -29,6 +29,7 @@ export default function LottieTab() {
   const fullAnimRef = useRef<AnimationItem | null>(null);
   const scrubbingRef = useRef(false);
   const segmentLoopActiveRef = useRef(false);
+  const fullNormalLoopRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("Lottie animation");
@@ -126,9 +127,14 @@ export default function LottieTab() {
     anim.addEventListener("enterFrame", (ev: any) => {
       if (!scrubbingRef.current) syncFrame(ev.currentTime ?? anim.currentFrame);
       const cur = ev.currentFrame;
-      if (segmentLoopActiveRef.current && cur >= safeLoopTo) anim.goToAndPlay(safeLoopFrom, true);
+      if (segmentLoopActiveRef.current && cur >= safeLoopTo - 1) anim.goToAndPlay(safeLoopFrom, true);
+      if (fullNormalLoopRef.current && cur >= totalFrames - 1) anim.goToAndPlay(0, true);
     });
-    anim.addEventListener("complete", () => { segmentLoopActiveRef.current = false; setFullPlaying(false); setSegmentPlaying(false); });
+    anim.addEventListener("complete", () => {
+      if (segmentLoopActiveRef.current) { anim.goToAndPlay(safeLoopFrom, true); return; }
+      if (fullNormalLoopRef.current) { anim.goToAndPlay(0, true); return; }
+      setFullPlaying(false); setSegmentPlaying(false);
+    });
     anim.addEventListener("DOMLoaded", () => anim.goToAndStop(frame, true));
     return () => { anim.destroy(); fullAnimRef.current = null; };
   }, [showSegmentPopup, edited, speed, safeLoopFrom, safeLoopTo, segmentFlow]);
@@ -147,6 +153,7 @@ export default function LottieTab() {
     setFullPlaying(false);
     setSegmentPlaying(false);
     segmentLoopActiveRef.current = false;
+    fullNormalLoopRef.current = false;
   };
 
   const togglePlayStop = (target: PlayerTarget = "main") => {
@@ -157,6 +164,7 @@ export default function LottieTab() {
       setFullPlaying(shouldPlay);
       if (shouldPlay) {
         segmentLoopActiveRef.current = false;
+        fullNormalLoopRef.current = true;
         setSegmentPlaying(false);
         const start = clampFrame(frame, totalFrames);
         if (start >= totalFrames - 1) anim.goToAndStop(0, true);
@@ -164,6 +172,7 @@ export default function LottieTab() {
         anim.play();
       } else {
         segmentLoopActiveRef.current = false;
+        fullNormalLoopRef.current = false;
         setSegmentPlaying(false);
         anim.pause();
         syncFrame(anim.currentFrame);
@@ -193,12 +202,14 @@ export default function LottieTab() {
     if (segmentLoopActiveRef.current && !anim.isPaused) {
       anim.pause();
       segmentLoopActiveRef.current = false;
+      fullNormalLoopRef.current = false;
       setFullPlaying(false);
       setSegmentPlaying(false);
       syncFrame(anim.currentFrame);
       return;
     }
     segmentLoopActiveRef.current = true;
+    fullNormalLoopRef.current = false;
     setFullPlaying(true);
     setSegmentPlaying(true);
     anim.loop = false;
@@ -209,6 +220,7 @@ export default function LottieTab() {
     const anim = fullAnimRef.current;
     if (!anim) return;
     segmentLoopActiveRef.current = false;
+    fullNormalLoopRef.current = false;
     setSegmentPlaying(false);
     setFullPlaying(true);
     anim.playSegments([safeLoopTo, totalFrames], true);
@@ -245,7 +257,7 @@ export default function LottieTab() {
       max={totalFrames}
       step={1}
       value={frame}
-      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; segmentLoopActiveRef.current = false; setPlaying(false); setFullPlaying(false); if (target !== "full") animRef.current?.pause(); else fullAnimRef.current?.pause(); }}
+      onPointerDown={(e) => { e.stopPropagation(); scrubbingRef.current = true; segmentLoopActiveRef.current = false; fullNormalLoopRef.current = false; setPlaying(false); setFullPlaying(false); setSegmentPlaying(false); if (target !== "full") animRef.current?.pause(); else fullAnimRef.current?.pause(); }}
       onPointerUp={(e) => { e.stopPropagation(); scrubbingRef.current = false; }}
       onPointerCancel={() => { scrubbingRef.current = false; }}
       onMouseDown={(e) => e.stopPropagation()}
