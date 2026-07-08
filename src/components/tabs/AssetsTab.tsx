@@ -72,7 +72,7 @@ export default function AssetsTab() {
                   {a.shape ? (
                     <span className="h-6 w-6 rounded border border-slate-700" style={{ background: a.shape.fill }} />
                   ) : (
-                    <img src={media?.dataUrl} className="h-6 w-6 rounded object-contain" />
+                    <img src={media?.dataUrl} referrerPolicy="no-referrer" className="h-6 w-6 rounded object-contain" />
                   )}
                   <span className="min-w-0 flex-1 truncate">{a.name}</span>
                 </button>

@@ -11,6 +11,8 @@ export { sampleGradientColor as sampleStops, shiftHue, behaviorTransform };
 export interface EngineOptions {
   editorMode?: boolean;
   simulateFast?: boolean;
+  /** Preview-only runtime multiplier. Export uses the default 1x. */
+  timeScale?: number;
 }
 
 interface ActiveEvent {
@@ -124,7 +126,7 @@ export class RuntimeEngine {
   mediaNextSpawnAt: Record<string, number> = {}; mediaLastSpawnAt: Record<string, number> = {}; particleState: Record<string, Particle[]> = {};
   particleCanvas?: HTMLCanvasElement; pctx?: CanvasRenderingContext2D; nightEl?: HTMLDivElement; bgRotEls: HTMLDivElement[] = [];
   bgRotIndex = 0; bgRotTimer = 0; startTime = 0; audioCtx?: AudioContext; analyser?: AnalyserNode; audioData?: Uint8Array; audioLevel = 0;
-  spawnCounts: Record<string, { total: number; hour: number; day: number; lastHour: number; lastDay: number }> = {};
+  spawnCounts: Record<string, { total: number; hour: number; day: number; week: number; lastHour: number; lastDay: number; lastWeek: number }> = {};
   dirState: Record<string, boolean> = {}; imgCache: Record<string, HTMLImageElement> = {};
   mediaInterval: Record<string, number> = {};
 
@@ -134,7 +136,11 @@ export class RuntimeEngine {
     this.build();
   }
 
-  elapsedSec(): number { return this.startTime ? (performance.now() - this.startTime) / 1000 : 0; }
+  private timeScale(): number { return Math.max(0.1, this.opts.timeScale ?? (this.opts.simulateFast ? 10 : 1)); }
+  private scaledNow(now = performance.now()): number { return this.startTime ? this.startTime + (now - this.startTime) * this.timeScale() : now; }
+  private scaledDate(now = performance.now()): Date { return new Date(Date.now() + (this.scaledNow(now) - now)); }
+
+  elapsedSec(): number { return this.startTime ? ((performance.now() - this.startTime) / 1000) * this.timeScale() : 0; }
 
   build() {
     this.root.innerHTML = "";
@@ -238,8 +244,9 @@ export class RuntimeEngine {
     const media = this.data.media.find((m) => m.id === mediaId);
     const objectFit = fit === "auto" ? "scale-down" : fit;
     const style = `width:100%;height:100%;object-fit:${objectFit};display:block;`;
-    if (media?.type === "video") return `<video src="${url}" autoplay loop muted playsinline style="${style}"></video>`;
-    return `<img src="${url}" style="${style}" draggable="false"/>`;
+    const safeUrl = String(url).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    if (media?.type === "video") return `<video src="${safeUrl}" autoplay loop muted playsinline referrerpolicy="no-referrer" style="${style}"></video>`;
+    return `<img src="${safeUrl}" style="${style}" draggable="false" referrerpolicy="no-referrer"/>`;
   }
 
   drawGuides() {
@@ -368,17 +375,16 @@ export class RuntimeEngine {
   getImg(mediaId: string): HTMLImageElement | undefined {
     if (this.imgCache[mediaId]) return this.imgCache[mediaId];
     const url = this.mediaMap[mediaId]; if (!url) return undefined;
-    const img = new Image(); img.crossOrigin = "anonymous"; img.src = url; this.imgCache[mediaId] = img; return img;
+    const img = new Image(); img.referrerPolicy = "no-referrer"; img.src = url; this.imgCache[mediaId] = img; return img;
   }
 
   scheduleGroups() {
-    const now = performance.now();
+    const now = this.scaledNow();
     for (const m of this.data.media) {
       if (m.inLibrary && this.data.assets.some(a => a.mediaId === m.id)) {
-        if (m.schedule.hourlyLimit > 0) {
-          const factor = this.opts.simulateFast ? 0.1 : 1;
+        if (m.schedule.enabled !== false && m.schedule.hourlyLimit > 0) {
           const perHour = Math.max(0.01, m.schedule.hourlyLimit);
-          const interval = (3600 / perHour) * factor * 1000;
+          const interval = (3600 / perHour) * 1000;
           this.mediaInterval[m.id] = interval;
           this.mediaNextSpawnAt[m.id] = now + 500 + Math.random() * 1000;
         }
@@ -387,21 +393,23 @@ export class RuntimeEngine {
   }
 
   checkMediaSpawns(now: number) {
+    const scaledNow = this.scaledNow(now);
     for (const mediaId in this.mediaNextSpawnAt) {
-      if (now >= this.mediaNextSpawnAt[mediaId]) {
+      if (scaledNow >= this.mediaNextSpawnAt[mediaId]) {
         const m = this.data.media.find(x => x.id === mediaId);
         if (m && this.mediaAllowedNow(m)) {
           this.triggerMedia(mediaId);
         }
         const interval = this.mediaInterval[mediaId] || 4000;
-        this.mediaNextSpawnAt[mediaId] = now + interval;
+        this.mediaNextSpawnAt[mediaId] = scaledNow + interval;
       }
     }
   }
 
   mediaAllowedNow(m: any): boolean {
-    if (this.opts.simulateFast) return true;
-    const s = m.schedule, now = new Date(), today = now.toISOString().slice(0, 10);
+    const s = m.schedule;
+    if (s?.enabled === false) return false;
+    const now = this.scaledDate(), today = now.toISOString().slice(0, 10);
     if (s.dateStart && today < s.dateStart) return false;
     if (s.dateEnd && today > s.dateEnd) return false;
     const h = now.getHours() + now.getMinutes() / 60;
@@ -411,19 +419,23 @@ export class RuntimeEngine {
   }
 
   mediaWithinLimits(m: any): boolean {
-    const s = m.schedule, now = new Date(), h = now.getHours(), d = now.getDate(), state = this.spawnCounts[m.id];
+    const s = m.schedule, now = this.scaledDate(), h = now.getHours(), d = now.getDate();
+    const week = Math.floor(now.getTime() / (7 * 24 * 3600 * 1000));
+    const state = this.spawnCounts[m.id];
     if (!state) return true;
     if (state.lastHour !== h) { state.hour = 0; state.lastHour = h; }
     if (state.lastDay !== d) { state.day = 0; state.lastDay = d; }
+    if (state.lastWeek !== week) { state.week = 0; state.lastWeek = week; }
     if (s.hourlyLimit && state.hour >= s.hourlyLimit) return false;
     if (s.dailyLimit && state.day >= s.dailyLimit) return false;
+    if (s.weeklyLimit && state.week >= s.weeklyLimit) return false;
     return true;
   }
 
   triggerMedia(mediaId: string) {
     const media = this.data.media.find((x) => x.id === mediaId); if (!media) return;
-    const state = this.spawnCounts[media.id] || (this.spawnCounts[media.id] = { total: 0, hour: 0, day: 0, lastHour: -1, lastDay: -1 });
-    state.total++; state.hour++; state.day++;
+    const state = this.spawnCounts[media.id] || (this.spawnCounts[media.id] = { total: 0, hour: 0, day: 0, week: 0, lastHour: -1, lastDay: -1, lastWeek: -1 });
+    state.total++; state.hour++; state.day++; state.week++;
     const cat = this.data.categories?.find((c) => c.id === media.categoryId);
     const path = cat?.pathId ? this.data.paths.find((p) => p.id === cat.pathId) : undefined;
     
@@ -475,9 +487,11 @@ export class RuntimeEngine {
         lottie.loadAnimation({ container: el, renderer: "svg", loop: true, autoplay: true, animationData: animData }); 
       } catch (e) {}
     } else if (media.type === "video") {
-      el.innerHTML = `<video src="${media.dataUrl}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:contain"></video>`;
+      const safeUrl = String(media.dataUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      el.innerHTML = `<video src="${safeUrl}" autoplay loop muted playsinline referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:contain"></video>`;
     } else {
-      el.innerHTML = `<img src="${media.dataUrl}" style="width:100%;height:100%;object-fit:contain" draggable="false"/>`;
+      const safeUrl = String(media.dataUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      el.innerHTML = `<img src="${safeUrl}" style="width:100%;height:100%;object-fit:contain" draggable="false" referrerpolicy="no-referrer"/>`;
     }
     
     layerEl.appendChild(el);
@@ -498,7 +512,7 @@ export class RuntimeEngine {
     
     this.activeEvents.push({ 
       el, 
-      start: performance.now(), 
+      start: this.scaledNow(), 
       duration: travelTime * 1000, 
       path: poly, 
       flipAxis,
@@ -508,8 +522,9 @@ export class RuntimeEngine {
   }
 
   updateEvents(now: number) {
+    const scaledNow = this.scaledNow(now);
     for (let i = this.activeEvents.length - 1; i >= 0; i--) {
-      const ev = this.activeEvents[i]; const t = (now - ev.start) / ev.duration;
+      const ev = this.activeEvents[i]; const t = (scaledNow - ev.start) / ev.duration;
       if (t >= 1) { ev.el.remove(); this.activeEvents.splice(i, 1); continue; }
       const seg = t * (ev.path.length - 1), idx = Math.floor(seg), frac = seg - idx, a = ev.path[idx], b = ev.path[Math.min(idx + 1, ev.path.length - 1)];
       const x = a.x + (b.x - a.x) * frac, y = a.y + (b.y - a.y) * frac, w = parseFloat(ev.el.style.width), h = parseFloat(ev.el.style.height);
@@ -541,7 +556,7 @@ export class RuntimeEngine {
   startBgRotation() {
     if (!this.data.bgRotation.enabled || this.bgRotEls.length < 2) return;
     const rotate = () => { this.bgRotEls[this.bgRotIndex].style.opacity = "0"; this.bgRotIndex = (this.bgRotIndex + 1) % this.bgRotEls.length; this.bgRotEls[this.bgRotIndex].style.opacity = "1"; };
-    const interval = this.opts.simulateFast ? 5000 : this.data.bgRotation.intervalMin * 60000;
+    const interval = (this.data.bgRotation.intervalMin * 60000) / this.timeScale();
     this.bgRotTimer = window.setInterval(rotate, interval);
   }
 
@@ -556,7 +571,7 @@ export class RuntimeEngine {
       else this.renderBgGradient(anim.angle);
     }
     if (this.data.audioReactive?.enabled) this.updateAudio();
-    this.updateParticles(dt); this.updateEvents(ts); this.updateDayNight(ts);
+    this.updateParticles(dt * this.timeScale()); this.updateEvents(ts); this.updateDayNight(this.scaledNow(ts));
     this.checkMediaSpawns(ts);
     this.raf = requestAnimationFrame(this.loop);
   };

@@ -47,7 +47,7 @@ export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
         else if (mode === "canvas-vcenter") a.y = (H - a.height) / 2;
         else if (mode === "canvas-bottom") a.y = H - a.height;
       });
-    }, false);
+    });
   };
 
   const applyDistribute = (axis: "x" | "y") => {
@@ -74,7 +74,7 @@ export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
         let curY = first.y;
         sorted.forEach(a => { a.y = curY; curY += a.height + gap; });
       }
-    }, false);
+    });
   };
 
   const AlignIcon = ({ type }: { type: string }) => {

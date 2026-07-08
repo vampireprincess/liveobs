@@ -11,6 +11,7 @@ import type {
   Zone,
   EditorTab,
   CanvasTool,
+  RuntimePreviewSpeed,
 } from "./types";
 import { createProject, uid } from "./factory";
 import { saveProjectDb, deleteProjectDb, loadAllProjects, getMeta, setMeta } from "./db";
@@ -33,6 +34,7 @@ interface AppState {
   setSelIds: (ids: string[]) => void;
   activePathId: string | null;
   runtimePreview: boolean;
+  runtimePreviewSpeed: RuntimePreviewSpeed;
   dirty: boolean;
   zoneDrawKeepClear: boolean;
 
@@ -46,6 +48,7 @@ interface AppState {
   select: (kind: SelectionKind, id: string | null) => void;
   setActivePath: (id: string | null) => void;
   setRuntimePreview: (v: boolean) => void;
+  setRuntimePreviewSpeed: (v: RuntimePreviewSpeed) => void;
 
   newProject: (name?: string) => void;
   openProject: (id: string) => void;
@@ -137,6 +140,7 @@ export const useStore = create<AppState>((set, get) => {
     setSelIds: (ids) => set({ selIds: ids }),
     activePathId: null,
     runtimePreview: false,
+    runtimePreviewSpeed: 1,
     dirty: false,
     zoneDrawKeepClear: false,
 
@@ -175,9 +179,10 @@ export const useStore = create<AppState>((set, get) => {
     setTab: (t) => set({ tab: t }),
     setTool: (t) => set({ tool: t }),
     setZoneDrawKeepClear: (v) => set({ zoneDrawKeepClear: v }),
-    select: (kind, id) => set({ selKind: kind, selId: id }),
+    select: (kind, id) => set({ selKind: kind, selId: id, selIds: kind === "asset" && id ? [id] : [] }),
     setActivePath: (id) => set({ activePathId: id }),
     setRuntimePreview: (v) => set({ runtimePreview: v }),
+    setRuntimePreviewSpeed: (v) => set({ runtimePreviewSpeed: v }),
 
     newProject: (name) => {
       const p = createProject(name);

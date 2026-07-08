@@ -270,6 +270,8 @@ export interface AudioReactiveConfig {
   smoothing: number;
 }
 
+export type RuntimePreviewSpeed = 1 | 2 | 3 | 4;
+
 export interface Project {
   id: string;
   name: string;
