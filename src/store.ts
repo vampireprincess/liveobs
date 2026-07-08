@@ -15,6 +15,7 @@ import type {
 } from "./types";
 import { createProject, uid } from "./factory";
 import { saveProjectDb, deleteProjectDb, loadAllProjects, getMeta, setMeta } from "./db";
+import { normalizeCanvasSize } from "./projectNormalize";
 
 export type SelectionKind = "asset" | "group" | "particle" | "path" | "zone" | "layer" | null;
 
@@ -149,9 +150,7 @@ export const useStore = create<AppState>((set, get) => {
       projects = projects.map((p) => ({
         ...p,
         data: {
-          ...p.data,
-          canvasWidth: (p.data.canvasWidth ?? 1920) < 1000 ? 1920 : (p.data.canvasWidth ?? 1920),
-          canvasHeight: (p.data.canvasHeight ?? 1080) < 600 ? 1080 : (p.data.canvasHeight ?? 1080),
+          ...normalizeCanvasSize(p.data),
           categories: (p.data.categories ?? createProject().data.categories).map(c => ({
             ...c,
             flipAxis: c.flipAxis ?? "horizontal",
@@ -166,6 +165,7 @@ export const useStore = create<AppState>((set, get) => {
           })),
         },
       }));
+      await Promise.all(projects.map((p) => saveProjectDb(p)));
       if (!projects.length) {
         const p = createProject("My First Scene");
         await saveProjectDb(p);

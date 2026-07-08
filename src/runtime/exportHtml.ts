@@ -14,6 +14,8 @@ function normalizeExportData(data: ProjectData): ProjectData {
 function pruneUnusedMedia(data: ProjectData): ProjectData {
   const d = structuredClone(data);
   const used = new Set<string>();
+  const visibleLayerIds = new Set(d.layers.filter((l) => l.visible).map((l) => l.id));
+  d.assets = d.assets.filter((a) => a.visible && visibleLayerIds.has(a.layerId));
   d.assets.forEach((a) => { if (a.mediaId) used.add(a.mediaId); });
   d.bgRotation.mediaIds.forEach((id) => used.add(id));
   d.particles.forEach((p) => p.customMediaIds.forEach((id) => used.add(id)));

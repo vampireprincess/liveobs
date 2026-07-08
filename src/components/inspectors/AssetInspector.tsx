@@ -13,7 +13,10 @@ export default function AssetInspector() {
   const selId = useStore((s) => s.selId)!;
   const a = data.assets.find((x) => x.id === selId);
   if (!a) return null;
-  const set = (patch: Partial<typeof a>) => useStore.getState().updateAsset(a.id, patch);
+  const set = (patch: Partial<typeof a>) => useStore.getState().update((d) => {
+    const target = d.assets.find((x) => x.id === a.id);
+    if (target) Object.assign(target, patch);
+  });
 
   const media = a.mediaId ? data.media.find((m) => m.id === a.mediaId) : undefined;
   const W = data.canvasWidth;
