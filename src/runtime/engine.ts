@@ -217,10 +217,11 @@ export class RuntimeEngine {
     for (const a of this.data.assets) {
       if (!a.visible) continue;
       if (a.layerId === "layer-rand") continue;
-      const layerEl = this.layerEls[a.layerId] || this.root;
+      const layerIndex = this.data.layers.findIndex((l) => l.id === a.layerId);
+      const layerEl = this.root;
       const el = document.createElement("div");
       el.style.position = "absolute"; el.style.left = a.x + "px"; el.style.top = a.y + "px"; el.style.width = a.width + "px"; el.style.height = a.height + "px";
-      el.style.opacity = String(a.opacity); el.style.zIndex = String(a.zoffset);
+      el.style.opacity = String(a.opacity); el.style.zIndex = String((Math.max(0, layerIndex) * 1000) + (a.zoffset ?? 0) + 10);
       el.style.mixBlendMode = a.blend === "normal" ? "normal" : a.blend === "add" ? "plus-lighter" : a.blend;
       const sx = a.flipH ? -a.scale : a.scale, sy = a.flipV ? -a.scale : a.scale;
       el.style.transformOrigin = `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`;

@@ -212,11 +212,12 @@ RuntimeEngine.prototype.build=function(){
   d.assets.forEach(function(a){
     if(!a.visible) return;
     if(a.layerId==='layer-rand') return;
-    var layerEl=self.layerEls[a.layerId]||root;
+    var layerIndex=d.layers.findIndex(function(l){return l.id===a.layerId;});
+    var layerEl=root;
     var el=document.createElement('div');
     el.style.position='absolute'; el.style.left=a.x+'px'; el.style.top=a.y+'px';
     el.style.width=a.width+'px'; el.style.height=a.height+'px'; el.style.opacity=String(a.opacity);
-    el.style.zIndex=String(a.zoffset);
+    el.style.zIndex=String((Math.max(0,layerIndex)*1000)+(a.zoffset||0)+10);
     el.style.mixBlendMode=a.blend==='normal'?'normal':(a.blend==='add'?'plus-lighter':a.blend);
     el.style.transformOrigin=((a.refPointX||0.5)*100)+'% '+((a.refPointY||0.5)*100)+'%';
     var sx=a.flipH?-a.scale:a.scale, sy=a.flipV?-a.scale:a.scale;
