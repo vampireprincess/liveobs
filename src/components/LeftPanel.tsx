@@ -6,6 +6,8 @@ import RandomTab from "./tabs/RandomTab";
 import PathsTab from "./tabs/PathsTab";
 import ZonesTab from "./tabs/ZonesTab";
 import ParticlesTab from "./tabs/ParticlesTab";
+import LottieTab from "./tabs/LottieTab";
+import SvgTab from "./tabs/SvgTab";
 import ExportTab from "./tabs/ExportTab";
 import GradientTab from "./tabs/GradientTab";
 import AudioTab from "./tabs/AudioTab";
@@ -18,6 +20,8 @@ const TABS: { id: EditorTab; label: string; icon: string }[] = [
   { id: "paths", label: "Paths", icon: "〰️" },
   { id: "zones", label: "Zones", icon: "🗺️" },
   { id: "particles", label: "Particles", icon: "❄️" },
+  { id: "lottie", label: "Lottie", icon: "🎬" },
+  { id: "svg", label: "SVG", icon: "✒️" },
   { id: "gradient", label: "Gradient", icon: "🌈" },
   { id: "audio", label: "Audio", icon: "🎤" },
   { id: "debug", label: "Debug", icon: "🔍" },
@@ -49,6 +53,8 @@ export default function LeftPanel() {
         {tab === "paths" && <PathsTab />}
         {tab === "zones" && <ZonesTab />}
         {tab === "particles" && <ParticlesTab />}
+        {tab === "lottie" && <LottieTab />}
+        {tab === "svg" && <SvgTab />}
         {tab === "gradient" && <GradientTab />}
         {tab === "audio" && <AudioTab />}
         {tab === "debug" && <DebugTab />}
