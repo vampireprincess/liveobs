@@ -127,6 +127,7 @@ export default function LottieTab() {
       if (segmentFlow === "intro-loop" && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
       if (segmentFlow === "loop-outro" && segmentLoopActiveRef.current && cur >= safeLoopTo) anim.playSegments([safeLoopFrom, safeLoopTo], true);
     });
+    anim.addEventListener("complete", () => { segmentLoopActiveRef.current = false; setFullPlaying(false); });
     anim.addEventListener("DOMLoaded", () => anim.goToAndStop(frame, true));
     return () => { anim.destroy(); fullAnimRef.current = null; };
   }, [showSegmentPopup, edited, speed, safeLoopFrom, safeLoopTo, segmentFlow]);
@@ -147,16 +148,36 @@ export default function LottieTab() {
 
   const togglePlayStop = (target: PlayerTarget = "main") => {
     if (target === "full") {
-      const shouldPlay = fullAnimRef.current?.isPaused ?? !fullPlaying;
+      const anim = fullAnimRef.current;
+      if (!anim) return;
+      const shouldPlay = anim.isPaused;
       setFullPlaying(shouldPlay);
-      if (shouldPlay) { segmentLoopActiveRef.current = false; if ((fullAnimRef.current?.currentFrame ?? 0) >= totalFrames - 1) fullAnimRef.current?.goToAndStop(0, true); fullAnimRef.current?.play(); }
-      else { segmentLoopActiveRef.current = false; fullAnimRef.current?.pause(); }
+      if (shouldPlay) {
+        segmentLoopActiveRef.current = false;
+        const start = clampFrame(frame, totalFrames);
+        if (start >= totalFrames - 1) anim.goToAndStop(0, true);
+        else anim.goToAndStop(start, true);
+        anim.play();
+      } else {
+        segmentLoopActiveRef.current = false;
+        anim.pause();
+        syncFrame(anim.currentFrame);
+      }
       return;
     }
-    const shouldPlay = animRef.current?.isPaused ?? !playing;
+    const anim = animRef.current;
+    if (!anim) return;
+    const shouldPlay = anim.isPaused;
     setPlaying(shouldPlay);
-    if (shouldPlay) { if ((animRef.current?.currentFrame ?? 0) >= totalFrames - 1) animRef.current?.goToAndStop(0, true); animRef.current?.play(); }
-    else animRef.current?.pause();
+    if (shouldPlay) {
+      const start = clampFrame(frame, totalFrames);
+      if (start >= totalFrames - 1) anim.goToAndStop(0, true);
+      else anim.goToAndStop(start, true);
+      anim.play();
+    } else {
+      anim.pause();
+      syncFrame(anim.currentFrame);
+    }
   };
 
   const stepFrame = (delta: number) => seek(frame + delta, showSegmentPopup ? "full" : "main");
@@ -166,8 +187,12 @@ export default function LottieTab() {
     if (!anim) return;
     segmentLoopActiveRef.current = true;
     setFullPlaying(true);
-    if (segmentFlow === "intro-loop") anim.playSegments([[0, safeLoopFrom], [safeLoopFrom, safeLoopTo]], true);
-    else anim.playSegments([safeLoopFrom, safeLoopTo], true);
+    anim.loop = false;
+    if (segmentFlow === "intro-loop") {
+      anim.goToAndPlay(0, true);
+    } else {
+      anim.goToAndPlay(safeLoopFrom, true);
+    }
   };
 
   const playOutroOnce = () => {

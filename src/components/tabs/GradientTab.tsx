@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { useStore } from "../../store";
 import { Panel, Slider, Select, Toggle, Btn } from "../ui";
 import GradientBar from "../GradientBar";
-import { uid } from "../../factory";
+import { uid, newCanvasAsset, defaultSchedule } from "../../factory";
 import type { GradientConfig, GradientMode, SavedGradient, SavedPalette, ColorStop } from "../../types";
 import { computeGradientAnim } from "../../gradientMath";
 import {
@@ -89,6 +89,29 @@ export default function GradientTab() {
       const cur = d.gradientStudio ?? studio;
       d.gradientStudio = { ...cur, gradient: { ...cur.gradient, ...patch } };
     });
+
+  const addGradientAsLayerAsset = () => {
+    const css = getGradientCss(g);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${data.canvasWidth}" height="${data.canvasHeight}" viewBox="0 0 ${data.canvasWidth} ${data.canvasHeight}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:${css};"></div></foreignObject></svg>`;
+    const encoded = btoa(unescape(encodeURIComponent(svg)));
+    const media = {
+      id: uid(),
+      name: "Gradient Layer",
+      type: "svg" as const,
+      dataUrl: `data:image/svg+xml;base64,${encoded}`,
+      width: data.canvasWidth,
+      height: data.canvasHeight,
+      categoryId: "static-assets",
+      schedule: defaultSchedule(),
+      inLibrary: false,
+    };
+    useStore.getState().addMedia(media);
+    const layer = data.layers.find((l) => l.id === "layer-bg") ?? data.layers[0];
+    const asset = newCanvasAsset(media.id, layer.id, media);
+    Object.assign(asset, { x: 0, y: 0, width: data.canvasWidth, height: data.canvasHeight, name: "Gradient Layer", fit: "fill" as const, opacity: 0.65, blend: "overlay" as const });
+    useStore.getState().addAsset(asset);
+    useStore.getState().select("asset", asset.id);
+  };
 
   // ---- color palette ----
   const fileRef = useRef<HTMLInputElement>(null);
@@ -241,6 +264,8 @@ export default function GradientTab() {
       <Panel title="🌈 Gradient Studio">
         {/* live, real-time animated preview */}
         <LiveGradientPreview g={g} />
+        <Btn className="w-full" onClick={addGradientAsLayerAsset}>➕ Add current gradient as canvas layer asset</Btn>
+        <p className="text-[10px] text-slate-500">Creates a full-canvas gradient layer asset, so you can reorder it with images and use opacity/blend mode in the Asset Inspector.</p>
 
         <div>
           <div className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Apply Gradient To</div>
