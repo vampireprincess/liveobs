@@ -3,14 +3,17 @@
 // day/night cycle and background rotation. Used by both the live preview and
 // the exported standalone HTML. Zero dependencies, no network.
 import type { ProjectData, MotionPath, Zone, ParticleSystem, GradientConfig, FlipAxis } from "../types";
-import { sampleGradientColor, shiftHue, computeGradientAnim, gradientCss, behaviorTransform } from "../gradientMath";
+import { sampleGradientColor, shiftHue, computeGradientAnim, gradientCss, behaviorTransform, oneShotTransform } from "../gradientMath";
 import lottie from "lottie-web";
+import { normalizeCanvasSize } from "../projectNormalize";
 
-export { sampleGradientColor as sampleStops, shiftHue, behaviorTransform };
+export { sampleGradientColor as sampleStops, shiftHue, behaviorTransform, oneShotTransform };
 
 export interface EngineOptions {
   editorMode?: boolean;
   simulateFast?: boolean;
+  /** Preview-only runtime multiplier. Export uses the default 1x. */
+  timeScale?: number;
 }
 
 interface ActiveEvent {
@@ -21,6 +24,8 @@ interface ActiveEvent {
   flipAxis: FlipAxis | null;
   exclIds: string[];
   rotateAlongPath?: boolean;
+  easing?: string;
+  template?: Partial<import("../types").CanvasAsset>;
 }
 
 interface Particle {
@@ -44,6 +49,20 @@ export function samplePath(path: MotionPath, segments = 48): { x: number; y: num
   if (pts.length < 2) return pts.map((p) => ({ x: p.x, y: p.y }));
   const out: { x: number; y: number }[] = [];
   const list = path.closed ? [...pts, pts[0]] : pts;
+
+  if ((path.mode ?? "curve") === "angle") {
+    for (let i = 0; i < list.length - 1; i++) {
+      const p0 = list[i], p1 = list[i + 1];
+      for (let s = 0; s < segments; s++) {
+        const t = s / segments;
+        out.push({ x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t });
+      }
+    }
+    const last = list[list.length - 1];
+    out.push({ x: last.x, y: last.y });
+    return out;
+  }
+
   for (let i = 0; i < list.length - 1; i++) {
     const p0 = list[i], p1 = list[i + 1];
     const c0 = { x: p0.x + p0.hOut.x, y: p0.y + p0.hOut.y };
@@ -55,8 +74,26 @@ export function samplePath(path: MotionPath, segments = 48): { x: number; y: num
       out.push({ x, y });
     }
   }
-  out.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y });
+  const last = list[list.length - 1];
+  out.push({ x: last.x, y: last.y });
   return out;
+}
+
+export function ease01(t: number, easing?: string): number {
+  const x = Math.max(0, Math.min(1, t));
+  if (easing === "ease-in") return x * x;
+  if (easing === "ease-out") return 1 - (1 - x) * (1 - x);
+  if (easing === "ease-in-out") return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  if (easing === "smoothstep") return x * x * (3 - 2 * x);
+  if (easing === "sine") return -(Math.cos(Math.PI * x) - 1) / 2;
+  if (easing === "bounce") {
+    const n1 = 7.5625, d1 = 2.75;
+    if (x < 1 / d1) return n1 * x * x;
+    if (x < 2 / d1) { const y = x - 1.5 / d1; return n1 * y * y + 0.75; }
+    if (x < 2.5 / d1) { const y = x - 2.25 / d1; return n1 * y * y + 0.9375; }
+    const y = x - 2.625 / d1; return n1 * y * y + 0.984375;
+  }
+  return x;
 }
 
 export function pathSvgD(path: MotionPath): string {
@@ -66,8 +103,11 @@ export function pathSvgD(path: MotionPath): string {
   const list = path.closed ? [...pts, pts[0]] : pts;
   for (let i = 0; i < list.length - 1; i++) {
     const p0 = list[i], p1 = list[i + 1];
-    const c0x = p0.x + p0.hOut.x, c0y = p0.y + p0.hOut.y, c1x = p1.x + p1.hIn.x, c1y = p1.y + p1.hIn.y;
-    d += ` C ${c0x} ${c0y}, ${c1x} ${c1y}, ${p1.x} ${p1.y}`;
+    if ((path.mode ?? "curve") === "angle") d += ` L ${p1.x} ${p1.y}`;
+    else {
+      const c0x = p0.x + p0.hOut.x, c0y = p0.y + p0.hOut.y, c1x = p1.x + p1.hIn.x, c1y = p1.y + p1.hIn.y;
+      d += ` C ${c0x} ${c0y}, ${c1x} ${c1y}, ${p1.x} ${p1.y}`;
+    }
   }
   if (path.closed) d += " Z";
   return d;
@@ -114,6 +154,10 @@ export function shapeSvg(a: import("../types").CanvasAsset): string {
   const sw = shape.strokeWidth, fill = shape.fill, stroke = shape.stroke, common = `vector-effect:non-scaling-stroke;`;
   if (shape.kind === "ellipse") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><ellipse cx="50" cy="50" rx="${50 - sw}" ry="${50 - sw}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
   if (shape.kind === "triangle") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,4 96,96 4,96" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "diamond") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 97,50 50,97 3,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "pentagon") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 97,38 79,96 21,96 3,38" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "hexagon") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="25,5 75,5 98,50 75,95 25,95 2,50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
+  if (shape.kind === "star") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><polygon points="50,3 61,36 96,36 68,56 79,91 50,70 21,91 32,56 4,36 39,36" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
   if (shape.kind === "line") return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><line x1="2" y1="50" x2="98" y2="50" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" style="${common}"/></svg>`;
   return `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none"><rect x="${sw}" y="${sw}" width="${100 - sw * 2}" height="${100 - sw * 2}" rx="${shape.radius}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="${common}"/></svg>`;
 }
@@ -124,17 +168,39 @@ export class RuntimeEngine {
   mediaNextSpawnAt: Record<string, number> = {}; mediaLastSpawnAt: Record<string, number> = {}; particleState: Record<string, Particle[]> = {};
   particleCanvas?: HTMLCanvasElement; pctx?: CanvasRenderingContext2D; nightEl?: HTMLDivElement; bgRotEls: HTMLDivElement[] = [];
   bgRotIndex = 0; bgRotTimer = 0; startTime = 0; audioCtx?: AudioContext; analyser?: AnalyserNode; audioData?: Uint8Array; audioLevel = 0;
-  spawnCounts: Record<string, { total: number; hour: number; day: number; lastHour: number; lastDay: number }> = {};
+  spawnCounts: Record<string, { total: number; hour: number; day: number; week: number; lastHour: number; lastDay: number; lastWeek: number }> = {};
   dirState: Record<string, boolean> = {}; imgCache: Record<string, HTMLImageElement> = {};
   mediaInterval: Record<string, number> = {};
+  private timeScaleValue = 1;
+  private realBaseTime = 0;
+  private simBaseTime = 0;
 
   constructor(root: HTMLElement, data: ProjectData, opts: EngineOptions = {}) {
-    this.root = root; this.data = data; this.opts = opts;
+    this.root = root; this.data = this.normalizedData(data); this.opts = opts;
+    this.timeScaleValue = Math.max(0.1, opts.timeScale ?? (opts.simulateFast ? 10 : 1));
     this.mediaMap = Object.fromEntries(data.media.map((m) => [m.id, m.dataUrl]));
     this.build();
   }
 
-  elapsedSec(): number { return this.startTime ? (performance.now() - this.startTime) / 1000 : 0; }
+  private timeScale(): number { return this.timeScaleValue; }
+  private scaledNow(now = performance.now()): number { return this.startTime ? this.simBaseTime + (now - this.realBaseTime) * this.timeScale() : now; }
+  private scaledDate(now = performance.now()): Date { return new Date(Date.now() + (this.scaledNow(now) - now)); }
+
+  setTimeScale(scale: number) {
+    const next = Math.max(0.1, scale || 1);
+    const now = performance.now();
+    this.simBaseTime = this.scaledNow(now);
+    this.realBaseTime = now;
+    this.timeScaleValue = next;
+    this.opts.timeScale = next;
+    if (this.running) { clearInterval(this.bgRotTimer); this.startBgRotation(); }
+  }
+
+  elapsedSec(): number { return this.startTime ? (this.scaledNow() - this.startTime) / 1000 : 0; }
+
+  private normalizedData(data: ProjectData): ProjectData {
+    return normalizeCanvasSize(data);
+  }
 
   build() {
     this.root.innerHTML = "";
@@ -155,11 +221,14 @@ export class RuntimeEngine {
 
     for (const a of this.data.assets) {
       if (!a.visible) continue;
-      if (a.layerId === "layer-rand") continue;
-      const layerEl = this.layerEls[a.layerId] || this.root;
+      const staticMediaForLayerCheck = a.mediaId ? this.data.media.find((m) => m.id === a.mediaId) : undefined;
+      const looksLikeGradientAsset = !!a.gradient || /gradient/i.test(a.name ?? "") || /gradient/i.test(staticMediaForLayerCheck?.name ?? "");
+      if (a.layerId === "layer-rand" && !looksLikeGradientAsset && staticMediaForLayerCheck?.inLibrary !== false) continue;
+      const layerIndex = this.data.layers.findIndex((l) => l.id === a.layerId);
+      const layerEl = this.root;
       const el = document.createElement("div");
       el.style.position = "absolute"; el.style.left = a.x + "px"; el.style.top = a.y + "px"; el.style.width = a.width + "px"; el.style.height = a.height + "px";
-      el.style.opacity = String(a.opacity); el.style.zIndex = String(a.zoffset);
+      el.style.opacity = String(a.opacity); el.style.zIndex = String((Math.max(0, layerIndex) * 1000) + (a.zoffset ?? 0) + 10);
       el.style.mixBlendMode = a.blend === "normal" ? "normal" : a.blend === "add" ? "plus-lighter" : a.blend;
       const sx = a.flipH ? -a.scale : a.scale, sy = a.flipV ? -a.scale : a.scale;
       el.style.transformOrigin = `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`;
@@ -187,7 +256,39 @@ export class RuntimeEngine {
         const s = a.shadow; const sh = `drop-shadow(${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color})`;
         el.style.filter = a.animation === "blur" ? el.style.filter + " " + sh : sh;
       }
-      el.innerHTML = this.assetMarkup(a);
+      if (a.gradient) {
+        const child = document.createElement("div");
+        child.style.width = "100%"; child.style.height = "100%";
+        el.appendChild(child);
+        const renderGradient = (elapsed: number) => {
+          const gg = a.gradient!;
+          if (!gg.animate) { child.style.background = gradientCss(gg.type, gg.angle, gg.stops); return; }
+          const anim = computeGradientAnim(gg, elapsed);
+          const animType = gg.animType || (gg.type === "linear" ? "rotation" : "hue");
+          if (animType === "panning") { child.style.backgroundSize = gg.type === "linear" ? "220% 220%" : "100% 100%"; child.style.backgroundPosition = `${anim.panPercent}% 50%`; child.style.background = gradientCss(gg.type, gg.angle, gg.stops); }
+          else if (animType === "hue") child.style.background = gradientCss(gg.type, gg.angle, gg.stops, anim.hueShift);
+          else child.style.background = gradientCss(gg.type, anim.angle, gg.stops);
+        };
+        if (a.gradient.animate) {
+          const start = performance.now();
+          const tick = () => { if (!child.isConnected) return; renderGradient((performance.now() - start) / 1000); requestAnimationFrame(tick); };
+          tick();
+        } else renderGradient(0);
+      } else {
+      const staticMedia = a.mediaId ? this.data.media.find((m) => m.id === a.mediaId) : undefined;
+      if (staticMedia?.type === "lottie") {
+        try {
+          const isData = staticMedia.dataUrl.startsWith("data:");
+          const anim = lottie.loadAnimation(isData
+            ? { container: el, renderer: "svg", loop: true, autoplay: true, animationData: JSON.parse(atob(staticMedia.dataUrl.split(",")[1])) }
+            : { container: el, renderer: "svg", loop: true, autoplay: true, path: staticMedia.dataUrl });
+          anim.addEventListener("complete", () => anim.goToAndPlay(0, true));
+          window.setInterval(() => { if (el.isConnected && anim.isPaused) anim.play(); }, 1000);
+        } catch (e) { console.warn("Lottie runtime error", e); }
+      } else {
+        el.innerHTML = this.assetMarkup(a);
+      }
+      }
       layerEl.appendChild(el);
     }
 
@@ -238,8 +339,9 @@ export class RuntimeEngine {
     const media = this.data.media.find((m) => m.id === mediaId);
     const objectFit = fit === "auto" ? "scale-down" : fit;
     const style = `width:100%;height:100%;object-fit:${objectFit};display:block;`;
-    if (media?.type === "video") return `<video src="${url}" autoplay loop muted playsinline style="${style}"></video>`;
-    return `<img src="${url}" style="${style}" draggable="false"/>`;
+    const safeUrl = String(url).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    if (media?.type === "video") return `<video src="${safeUrl}" autoplay loop muted playsinline referrerpolicy="no-referrer" style="${style}"></video>`;
+    return `<img src="${safeUrl}" style="${style}" draggable="false" referrerpolicy="no-referrer"/>`;
   }
 
   drawGuides() {
@@ -368,17 +470,16 @@ export class RuntimeEngine {
   getImg(mediaId: string): HTMLImageElement | undefined {
     if (this.imgCache[mediaId]) return this.imgCache[mediaId];
     const url = this.mediaMap[mediaId]; if (!url) return undefined;
-    const img = new Image(); img.crossOrigin = "anonymous"; img.src = url; this.imgCache[mediaId] = img; return img;
+    const img = new Image(); img.referrerPolicy = "no-referrer"; img.src = url; this.imgCache[mediaId] = img; return img;
   }
 
   scheduleGroups() {
-    const now = performance.now();
+    const now = this.scaledNow();
     for (const m of this.data.media) {
       if (m.inLibrary && this.data.assets.some(a => a.mediaId === m.id)) {
-        if (m.schedule.hourlyLimit > 0) {
-          const factor = this.opts.simulateFast ? 0.1 : 1;
+        if (m.schedule.enabled !== false && m.schedule.hourlyLimit > 0) {
           const perHour = Math.max(0.01, m.schedule.hourlyLimit);
-          const interval = (3600 / perHour) * factor * 1000;
+          const interval = (3600 / perHour) * 1000;
           this.mediaInterval[m.id] = interval;
           this.mediaNextSpawnAt[m.id] = now + 500 + Math.random() * 1000;
         }
@@ -387,21 +488,23 @@ export class RuntimeEngine {
   }
 
   checkMediaSpawns(now: number) {
+    const scaledNow = this.scaledNow(now);
     for (const mediaId in this.mediaNextSpawnAt) {
-      if (now >= this.mediaNextSpawnAt[mediaId]) {
+      if (scaledNow >= this.mediaNextSpawnAt[mediaId]) {
         const m = this.data.media.find(x => x.id === mediaId);
         if (m && this.mediaAllowedNow(m)) {
           this.triggerMedia(mediaId);
         }
         const interval = this.mediaInterval[mediaId] || 4000;
-        this.mediaNextSpawnAt[mediaId] = now + interval;
+        this.mediaNextSpawnAt[mediaId] = scaledNow + interval;
       }
     }
   }
 
   mediaAllowedNow(m: any): boolean {
-    if (this.opts.simulateFast) return true;
-    const s = m.schedule, now = new Date(), today = now.toISOString().slice(0, 10);
+    const s = m.schedule;
+    if (s?.enabled === false) return false;
+    const now = this.scaledDate(), today = now.toISOString().slice(0, 10);
     if (s.dateStart && today < s.dateStart) return false;
     if (s.dateEnd && today > s.dateEnd) return false;
     const h = now.getHours() + now.getMinutes() / 60;
@@ -411,19 +514,23 @@ export class RuntimeEngine {
   }
 
   mediaWithinLimits(m: any): boolean {
-    const s = m.schedule, now = new Date(), h = now.getHours(), d = now.getDate(), state = this.spawnCounts[m.id];
+    const s = m.schedule, now = this.scaledDate(), h = now.getHours(), d = now.getDate();
+    const week = Math.floor(now.getTime() / (7 * 24 * 3600 * 1000));
+    const state = this.spawnCounts[m.id];
     if (!state) return true;
     if (state.lastHour !== h) { state.hour = 0; state.lastHour = h; }
     if (state.lastDay !== d) { state.day = 0; state.lastDay = d; }
+    if (state.lastWeek !== week) { state.week = 0; state.lastWeek = week; }
     if (s.hourlyLimit && state.hour >= s.hourlyLimit) return false;
     if (s.dailyLimit && state.day >= s.dailyLimit) return false;
+    if (s.weeklyLimit && state.week >= s.weeklyLimit) return false;
     return true;
   }
 
   triggerMedia(mediaId: string) {
     const media = this.data.media.find((x) => x.id === mediaId); if (!media) return;
-    const state = this.spawnCounts[media.id] || (this.spawnCounts[media.id] = { total: 0, hour: 0, day: 0, lastHour: -1, lastDay: -1 });
-    state.total++; state.hour++; state.day++;
+    const state = this.spawnCounts[media.id] || (this.spawnCounts[media.id] = { total: 0, hour: 0, day: 0, week: 0, lastHour: -1, lastDay: -1, lastWeek: -1 });
+    state.total++; state.hour++; state.day++; state.week++;
     const cat = this.data.categories?.find((c) => c.id === media.categoryId);
     const path = cat?.pathId ? this.data.paths.find((p) => p.id === cat.pathId) : undefined;
     
@@ -459,10 +566,14 @@ export class RuntimeEngine {
     const w = templateAsset ? templateAsset.width : (media.width || 200);
     const h = templateAsset ? templateAsset.height : (media.height || 120);
     
-    const layerEl = this.layerEls[cat?.layerId || "layer-rand"] || this.root;
+    const targetLayerId = cat?.layerId || "layer-rand";
+    const targetLayerIndex = this.data.layers.findIndex((l) => l.id === targetLayerId);
+    const layerEl = this.root;
     const el = document.createElement("div");
-    el.style.position = "absolute"; el.style.width = w + "px"; el.style.height = h + "px"; el.style.willChange = "transform";
-    el.style.zIndex = "100";
+    el.style.position = "absolute"; el.style.width = w + "px"; el.style.height = h + "px"; el.style.willChange = "transform, opacity, filter";
+    el.style.zIndex = String((Math.max(0, targetLayerIndex) * 1000) + (templateAsset?.zoffset ?? 100) + 10);
+    el.style.opacity = String(templateAsset?.opacity ?? 1);
+    el.style.mixBlendMode = templateAsset?.blend === "add" ? "plus-lighter" : (templateAsset?.blend || "normal");
     
     const shouldFlip = cat?.flipOnDirection && !ltr;
     const flipAxis: FlipAxis | null = shouldFlip ? (cat?.flipAxis || "horizontal") : null;
@@ -472,12 +583,16 @@ export class RuntimeEngine {
     if (media.type === "lottie") {
       try { 
         const animData = JSON.parse(atob(media.dataUrl.split(",")[1])); 
-        lottie.loadAnimation({ container: el, renderer: "svg", loop: true, autoplay: true, animationData: animData }); 
+        const anim = lottie.loadAnimation({ container: el, renderer: "svg", loop: true, autoplay: true, animationData: animData });
+        anim.addEventListener("complete", () => anim.goToAndPlay(0, true));
+        window.setInterval(() => { if (el.isConnected && anim.isPaused) anim.play(); }, 1000); 
       } catch (e) {}
     } else if (media.type === "video") {
-      el.innerHTML = `<video src="${media.dataUrl}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:contain"></video>`;
+      const safeUrl = String(media.dataUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      el.innerHTML = `<video src="${safeUrl}" autoplay loop muted playsinline referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:contain"></video>`;
     } else {
-      el.innerHTML = `<img src="${media.dataUrl}" style="width:100%;height:100%;object-fit:contain" draggable="false"/>`;
+      const safeUrl = String(media.dataUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      el.innerHTML = `<img src="${safeUrl}" style="width:100%;height:100%;object-fit:contain" draggable="false" referrerpolicy="no-referrer"/>`;
     }
     
     layerEl.appendChild(el);
@@ -498,36 +613,51 @@ export class RuntimeEngine {
     
     this.activeEvents.push({ 
       el, 
-      start: performance.now(), 
+      start: this.scaledNow(), 
       duration: travelTime * 1000, 
       path: poly, 
       flipAxis,
       exclIds: [],
-      rotateAlongPath: cat?.rotateAlongPath 
+      rotateAlongPath: cat?.rotateAlongPath,
+      easing: path?.easing,
+      template: templateAsset ? structuredClone(templateAsset) : undefined,
     });
   }
 
   updateEvents(now: number) {
+    const scaledNow = this.scaledNow(now);
     for (let i = this.activeEvents.length - 1; i >= 0; i--) {
-      const ev = this.activeEvents[i]; const t = (now - ev.start) / ev.duration;
-      if (t >= 1) { ev.el.remove(); this.activeEvents.splice(i, 1); continue; }
+      const ev = this.activeEvents[i]; const rawT = (scaledNow - ev.start) / ev.duration;
+      if (rawT >= 1) { ev.el.remove(); this.activeEvents.splice(i, 1); continue; }
+      const t = ease01(rawT, ev.easing);
       const seg = t * (ev.path.length - 1), idx = Math.floor(seg), frac = seg - idx, a = ev.path[idx], b = ev.path[Math.min(idx + 1, ev.path.length - 1)];
       const x = a.x + (b.x - a.x) * frac, y = a.y + (b.y - a.y) * frac, w = parseFloat(ev.el.style.width), h = parseFloat(ev.el.style.height);
       
+      const tmpl = ev.template;
+      const baseSX = tmpl?.flipH ? -(tmpl.scale ?? 1) : (tmpl?.scale ?? 1);
+      const baseSY = tmpl?.flipV ? -(tmpl.scale ?? 1) : (tmpl?.scale ?? 1);
+      const behavior = behaviorTransform(tmpl?.animation, (scaledNow - ev.start) / 1000, tmpl?.animSpeed ?? 1, tmpl?.rotation ?? 0, baseSX, baseSY);
+      let oneShot = { transform: "", opacity: 1 };
+      const enterDur = (tmpl?.entranceDuration ?? 0.6) * 1000;
+      const exitDur = (tmpl?.exitDuration ?? 0.6) * 1000;
+      if (tmpl?.entranceAnim && tmpl.entranceAnim !== "none" && scaledNow - ev.start < enterDur) oneShot = oneShotTransform(tmpl.entranceAnim, (scaledNow - ev.start) / enterDur, true);
+      if (tmpl?.exitAnim && tmpl.exitAnim !== "none" && ev.start + ev.duration - scaledNow < exitDur) oneShot = oneShotTransform(tmpl.exitAnim, 1 - ((ev.start + ev.duration - scaledNow) / exitDur), false);
+
       let transform = `translate(${x - w / 2}px, ${y - h / 2}px)`;
       if (ev.rotateAlongPath) {
         const angle = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
         transform += ` rotate(${angle}deg)`;
       }
-      if (ev.flipAxis === "horizontal") {
-        transform += ` scaleX(-1)`;
-      } else if (ev.flipAxis === "vertical") {
-        transform += ` scaleY(-1)`;
-      } else if (ev.flipAxis === "both") {
-        transform += ` scale(-1, -1)`;
+      if (!tmpl) {
+        if (ev.flipAxis === "horizontal") transform += ` scaleX(-1)`;
+        else if (ev.flipAxis === "vertical") transform += ` scaleY(-1)`;
+        else if (ev.flipAxis === "both") transform += ` scale(-1, -1)`;
       }
-      
+      transform += ` ${behavior.transform} ${oneShot.transform}`;
       ev.el.style.transform = transform;
+      ev.el.style.opacity = String((tmpl?.opacity ?? 1) * oneShot.opacity);
+      const shadow = tmpl?.shadow?.enabled ? `drop-shadow(${tmpl.shadow.offsetX}px ${tmpl.shadow.offsetY}px ${tmpl.shadow.blur}px ${tmpl.shadow.color})` : "";
+      ev.el.style.filter = [shadow, behavior.filter].filter(Boolean).join(" ");
       if (ev.exclIds.length) ev.el.style.visibility = allowedByZones(x, y, this.data.zones, [], ev.exclIds) ? "visible" : "hidden";
     }
   }
@@ -541,28 +671,34 @@ export class RuntimeEngine {
   startBgRotation() {
     if (!this.data.bgRotation.enabled || this.bgRotEls.length < 2) return;
     const rotate = () => { this.bgRotEls[this.bgRotIndex].style.opacity = "0"; this.bgRotIndex = (this.bgRotIndex + 1) % this.bgRotEls.length; this.bgRotEls[this.bgRotIndex].style.opacity = "1"; };
-    const interval = this.opts.simulateFast ? 5000 : this.data.bgRotation.intervalMin * 60000;
+    const interval = (this.data.bgRotation.intervalMin * 60000) / this.timeScale();
     this.bgRotTimer = window.setInterval(rotate, interval);
   }
 
   loop = (ts: number) => {
-    if (!this.running) return; const dt = this.lastTs ? Math.min(0.05, (ts - this.lastTs) / 1000) : 0.016; this.lastTs = ts;
-    const studio = this.data.gradientStudio, useStudioBg = studio && (studio.mode === "background" || studio.mode === "hybrid") && studio.gradient.stops.length;
-    const bgG = useStudioBg ? studio!.gradient : this.data.bgGradient?.enabled ? this.data.bgGradient : undefined;
-    if (bgG && bgG.animate) {
-      const anim = computeGradientAnim(bgG, this.elapsedSec()), animType = bgG.animType || (bgG.type === "linear" ? "rotation" : "hue");
-      if (animType === "panning") this.root.style.backgroundPosition = `${anim.panPercent}% 50%`;
-      else if (animType === "hue") this.renderBgGradient(bgG.angle, anim.hueShift);
-      else this.renderBgGradient(anim.angle);
+    if (!this.running) return;
+    try {
+      const dt = this.lastTs ? Math.min(0.05, (ts - this.lastTs) / 1000) : 0.016; this.lastTs = ts;
+      const studio = this.data.gradientStudio, useStudioBg = studio && (studio.mode === "background" || studio.mode === "hybrid") && studio.gradient.stops.length;
+      const bgG = useStudioBg ? studio!.gradient : this.data.bgGradient?.enabled ? this.data.bgGradient : undefined;
+      if (bgG && bgG.animate) {
+        const anim = computeGradientAnim(bgG, this.elapsedSec()), animType = bgG.animType || (bgG.type === "linear" ? "rotation" : "hue");
+        if (animType === "panning") this.root.style.backgroundPosition = `${anim.panPercent}% 50%`;
+        else if (animType === "hue") this.renderBgGradient(bgG.angle, anim.hueShift);
+        else this.renderBgGradient(anim.angle);
+      }
+      if (this.data.audioReactive?.enabled) this.updateAudio();
+      this.updateParticles(dt * this.timeScale()); this.updateEvents(ts); this.updateDayNight(this.scaledNow(ts));
+      this.checkMediaSpawns(ts);
+    } catch (err) {
+      console.error("Runtime loop error", err);
+    } finally {
+      this.raf = requestAnimationFrame(this.loop);
     }
-    if (this.data.audioReactive?.enabled) this.updateAudio();
-    this.updateParticles(dt); this.updateEvents(ts); this.updateDayNight(ts);
-    this.checkMediaSpawns(ts);
-    this.raf = requestAnimationFrame(this.loop);
   };
 
   start() {
-    if (this.running) return; this.running = true; this.startTime = performance.now(); this.lastTs = 0;
+    if (this.running) return; this.running = true; this.startTime = performance.now(); this.realBaseTime = this.startTime; this.simBaseTime = this.startTime; this.lastTs = 0;
     this.raf = requestAnimationFrame(this.loop); this.scheduleGroups(); this.startBgRotation();
     if (this.data.audioReactive?.enabled) this.initAudio();
   }
