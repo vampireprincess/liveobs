@@ -20,8 +20,19 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
       const st = useStore.getState();
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        if (target.closest("[data-local-undo='true']")) return;
+        const input = target as HTMLInputElement;
+        const allowAppUndo = target.tagName !== "INPUT" || input.type === "color" || input.type === "range";
+        if (allowAppUndo) {
+          e.preventDefault();
+          if (e.shiftKey) st.redo();
+          else st.undo();
+          return;
+        }
+      }
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
       const { selKind, selId, selIds } = st;
       if ((e.key === "Delete" || e.key === "Backspace") && (selId || selIds.length)) {
         if (selKind === "asset") {
@@ -83,8 +94,8 @@ export default function App() {
         if (e.key.toLowerCase() === "e") { st.setTool("zone-rect"); st.setTab("zones"); }
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   if (typeof window !== "undefined" && window.location.hash.startsWith("#runtime")) {

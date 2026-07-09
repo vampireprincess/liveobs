@@ -4,7 +4,7 @@ export type Vec2 = { x: number; y: number };
 
 export type BlendMode = "normal" | "screen" | "multiply" | "overlay" | "lighten" | "add";
 export type AssetFit = "contain" | "cover" | "fill" | "auto";
-export type ShapeKind = "rect" | "ellipse" | "triangle" | "line";
+export type ShapeKind = "rect" | "ellipse" | "triangle" | "line" | "diamond" | "pentagon" | "hexagon" | "star";
 
 export interface ShapeStyle {
   kind: ShapeKind;
@@ -33,7 +33,9 @@ export interface AssetCategory {
   excludeZoneIds?: string[];
 }
 
-export type BehaviorAnimation = "none" | "pendulum" | "rotation" | "shake" | "wiggle" | "float" | "pulse" | "bounce" | "skew" | "blur";
+export type BehaviorAnimation = "none" | "pendulum" | "rotation" | "shake" | "wiggle" | "float" | "pulse" | "bounce" | "skew" | "blur" | "heartbeat" | "sway" | "jelly" | "breathe" | "drift" | "glitch" | "orbit" | "tada";
+export type OneShotAnimation = "none" | "fade" | "scale" | "slide-up" | "slide-down" | "slide-left" | "slide-right" | "pop" | "spin";
+export type PathEasing = "linear" | "ease-in" | "ease-out" | "ease-in-out" | "smoothstep" | "sine" | "bounce";
 
 export interface AssetSchedule {
   spawnMode: "static" | "path";
@@ -126,9 +128,14 @@ export interface CanvasAsset {
   zoffset: number;
   blend: BlendMode;
   fit: AssetFit;
+  gradient?: GradientConfig;
   shadow?: DropShadow;
   animation?: BehaviorAnimation;
   animSpeed?: number;
+  entranceAnim?: OneShotAnimation;
+  entranceDuration?: number;
+  exitAnim?: OneShotAnimation;
+  exitDuration?: number;
   refPointX?: number;
   refPointY?: number;
 }
@@ -149,12 +156,16 @@ export interface PathPoint {
   hOut: Vec2;
 }
 
+export type PathMode = "curve" | "angle";
+
 export interface MotionPath {
   id: string;
   name: string;
   points: PathPoint[];
   closed: boolean;
   color: string;
+  mode?: PathMode;
+  easing?: PathEasing;
 }
 
 export type ZoneShape = "rect" | "ellipse" | "polygon" | "triangle";
@@ -270,6 +281,8 @@ export interface AudioReactiveConfig {
   smoothing: number;
 }
 
+export type RuntimePreviewSpeed = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
 export interface Project {
   id: string;
   name: string;
@@ -279,6 +292,6 @@ export interface Project {
   data: ProjectData;
 }
 
-export type EditorTab = "assets" | "layers" | "random" | "paths" | "zones" | "particles" | "gradient" | "audio" | "debug" | "export";
+export type EditorTab = "assets" | "layers" | "random" | "paths" | "zones" | "particles" | "shapes" | "lottie" | "svg" | "gradient" | "audio" | "debug" | "export";
 
 export type CanvasTool = "select" | "path" | "zone-rect" | "zone-ellipse" | "zone-poly" | "zone-triangle" | "shape-rect" | "shape-ellipse" | "shape-triangle" | "shape-line";

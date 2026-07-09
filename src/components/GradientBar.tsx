@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ColorStop } from "../types";
 import { uid } from "../factory";
+import { useStore } from "../store";
 
 interface Props {
   stops: ColorStop[];
@@ -13,6 +14,33 @@ export default function GradientBar({ stops, onChange }: Props) {
   const barRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const dragId = useRef<string | null>(null);
+  const localUndo = useRef<ColorStop[][]>([]);
+
+  const pushLocalUndo = () => {
+    const snap = structuredClone(stops);
+    const last = localUndo.current[localUndo.current.length - 1];
+    if (last && JSON.stringify(last) === JSON.stringify(snap)) return;
+    localUndo.current = [...localUndo.current, snap].slice(-30);
+  };
+
+  const undoLocal = () => {
+    const prev = localUndo.current.pop();
+    if (!prev) return false;
+    onChange(prev);
+    return true;
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      if (!localUndo.current.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      undoLocal();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onChange]);
 
   const sorted = [...stops].sort((a, b) => a.offset - b.offset);
   const cssStops = sorted.map((s) => `${s.color} ${(s.offset * 100).toFixed(1)}%`).join(", ");
@@ -31,6 +59,7 @@ export default function GradientBar({ stops, onChange }: Props) {
     // interpolate a color from neighbors
     const color = colorAt(sorted, offset);
     const ns: ColorStop = { id: uid(), color, offset };
+    pushLocalUndo();
     onChange([...stops, ns]);
     setActiveId(ns.id);
   };
@@ -38,6 +67,7 @@ export default function GradientBar({ stops, onChange }: Props) {
   const startDrag = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
     setActiveId(id);
+    pushLocalUndo();
     dragId.current = id;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -54,6 +84,7 @@ export default function GradientBar({ stops, onChange }: Props) {
 
   const deleteStop = (id: string) => {
     if (stops.length <= 2) return;
+    pushLocalUndo();
     onChange(stops.filter((s) => s.id !== id));
   };
 
@@ -61,8 +92,20 @@ export default function GradientBar({ stops, onChange }: Props) {
     onChange(stops.map((s) => (s.id === id ? { ...s, color } : s)));
   };
 
+  const startColorChange = () => pushLocalUndo();
+
+  const undoColorKey = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.shiftKey && undoLocal()) return;
+      if (e.shiftKey) useStore.getState().redo();
+      else useStore.getState().undo();
+    }
+  };
+
   return (
-    <div>
+    <div data-local-undo="true">
       <div className="mb-1 flex items-center justify-between text-[9px] text-slate-500">
         <span className="uppercase tracking-wide">Color Stops</span>
         <span>Click bar to add · Right-click node to delete</span>
@@ -90,7 +133,18 @@ export default function GradientBar({ stops, onChange }: Props) {
               activeId === s.id ? "border-white ring-2 ring-violet-400" : "border-white/70"
             }`}
             style={{ left: `${s.offset * 100}%`, background: s.color }}
-          />
+          >
+            <input
+              type="color"
+              value={s.color}
+              title="Click to edit color"
+              onPointerDown={(e) => { e.stopPropagation(); setActiveId(s.id); startColorChange(); }}
+              onFocus={startColorChange}
+              onKeyDown={undoColorKey}
+              onChange={(e) => setColor(s.id, e.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </div>
         ))}
       </div>
 
@@ -100,12 +154,22 @@ export default function GradientBar({ stops, onChange }: Props) {
           <input
             type="color"
             value={sorted.find((s) => s.id === activeId)?.color || "#ffffff"}
+            onPointerDown={startColorChange}
+            onFocus={startColorChange}
+            onKeyDown={undoColorKey}
             onChange={(e) => setColor(activeId, e.target.value)}
             className="h-6 w-10 rounded"
           />
           <span className="text-[10px] text-slate-400">
             {Math.round((sorted.find((s) => s.id === activeId)?.offset || 0) * 100)}%
           </span>
+          <button
+            onClick={undoLocal}
+            disabled={!localUndo.current.length}
+            className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+          >
+            Undo color
+          </button>
           <button
             onClick={() => deleteStop(activeId)}
             disabled={stops.length <= 2}

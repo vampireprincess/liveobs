@@ -20,7 +20,7 @@ interface P {
   phaseSpeed: number;
 }
 
-export default function EditorParticles({ W, H, layerId }: { W: number; H: number; layerId: string }) {
+export default function EditorParticles({ W, H, layerId, zIndex = 1 }: { W: number; H: number; layerId: string; zIndex?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const data = useStore((s) => s.data())!;
   
@@ -257,5 +257,5 @@ export default function EditorParticles({ W, H, layerId }: { W: number; H: numbe
     return () => cancelAnimationFrame(raf);
   }, [W, H, layerId, particlesKey]);
 
-  return <canvas ref={ref} width={W} height={H} className="pointer-events-none absolute inset-0" />;
+  return <canvas ref={ref} width={W} height={H} className="pointer-events-none absolute inset-0" style={{ zIndex }} />;
 }

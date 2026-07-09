@@ -8,6 +8,20 @@ export default function LayersTab() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [assetDragId, setAssetDragId] = useState<string | null>(null);
 
+  const reorderAssetTo = (draggedId: string, targetLayerId: string, beforeAssetId?: string) => {
+    useStore.getState().update((d) => {
+      const dragged = d.assets.find((x) => x.id === draggedId);
+      if (!dragged) return;
+      dragged.layerId = targetLayerId;
+      const list = d.assets
+        .filter((x) => x.layerId === targetLayerId && x.id !== draggedId)
+        .sort((a, b) => a.zoffset - b.zoffset);
+      const insertAt = beforeAssetId ? Math.max(0, list.findIndex((x) => x.id === beforeAssetId)) : list.length;
+      list.splice(insertAt < 0 ? list.length : insertAt, 0, dragged);
+      list.forEach((asset, index) => { asset.zoffset = index; });
+    });
+  };
+
   const ordered = [...data.layers].reverse(); // show top layer first
 
   return (
@@ -24,7 +38,7 @@ export default function LayersTab() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
                 if (assetDragId) {
-                  useStore.getState().updateAsset(assetDragId, { layerId: l.id });
+                  reorderAssetTo(assetDragId, l.id);
                   setAssetDragId(null);
                   return;
                 }
@@ -67,6 +81,13 @@ export default function LayersTab() {
                        return (
                          <div
                            key={a.id}
+                           onDragOver={(e) => e.preventDefault()}
+                           onDrop={(e) => {
+                             e.preventDefault();
+                             e.stopPropagation();
+                             if (assetDragId && assetDragId !== a.id) reorderAssetTo(assetDragId, l.id, a.id);
+                             setAssetDragId(null);
+                           }}
                            className="flex w-full items-center gap-1 rounded bg-slate-800/60 px-2 py-1 text-[11px] text-slate-300"
                          >
                            <button
@@ -78,7 +99,7 @@ export default function LayersTab() {
                              onClick={() => useStore.getState().select("asset", a.id)}
                              className={`flex min-w-0 flex-1 cursor-grab items-center gap-2 ${a.locked ? "opacity-50" : ""}`}
                            >
-                             {a.shape ? <span className="h-5 w-5 rounded border border-slate-600" style={{ background: a.shape.fill }} /> : <img src={media?.dataUrl} className="h-5 w-5 rounded object-contain" />}
+                             {a.shape ? <span className="h-5 w-5 rounded border border-slate-600" style={{ background: a.shape.fill }} /> : <img src={media?.dataUrl} referrerPolicy="no-referrer" className="h-5 w-5 rounded object-contain" />}
                              <span className="min-w-0 truncate">{a.name}</span>
                            </button>
                            <button

@@ -11,9 +11,11 @@ import type {
   Zone,
   EditorTab,
   CanvasTool,
+  RuntimePreviewSpeed,
 } from "./types";
 import { createProject, uid } from "./factory";
 import { saveProjectDb, deleteProjectDb, loadAllProjects, getMeta, setMeta } from "./db";
+import { normalizeCanvasSize } from "./projectNormalize";
 
 export type SelectionKind = "asset" | "group" | "particle" | "path" | "zone" | "layer" | null;
 
@@ -33,6 +35,7 @@ interface AppState {
   setSelIds: (ids: string[]) => void;
   activePathId: string | null;
   runtimePreview: boolean;
+  runtimePreviewSpeed: RuntimePreviewSpeed;
   dirty: boolean;
   zoneDrawKeepClear: boolean;
 
@@ -46,6 +49,7 @@ interface AppState {
   select: (kind: SelectionKind, id: string | null) => void;
   setActivePath: (id: string | null) => void;
   setRuntimePreview: (v: boolean) => void;
+  setRuntimePreviewSpeed: (v: RuntimePreviewSpeed) => void;
 
   newProject: (name?: string) => void;
   openProject: (id: string) => void;
@@ -137,6 +141,7 @@ export const useStore = create<AppState>((set, get) => {
     setSelIds: (ids) => set({ selIds: ids }),
     activePathId: null,
     runtimePreview: false,
+    runtimePreviewSpeed: 1,
     dirty: false,
     zoneDrawKeepClear: false,
 
@@ -145,12 +150,21 @@ export const useStore = create<AppState>((set, get) => {
       projects = projects.map((p) => ({
         ...p,
         data: {
-          ...p.data,
+          ...normalizeCanvasSize(p.data),
           categories: (p.data.categories ?? createProject().data.categories).map(c => ({
             ...c,
             flipAxis: c.flipAxis ?? "horizontal",
           })),
-          assets: p.data.assets.map((a) => ({ ...a, fit: a.fit ?? "contain" })),
+          assets: p.data.assets.map((a) => {
+            const media = (p.data.media || []).find((m: any) => m.id === a.mediaId);
+            const looksLikeGradient = a.gradient || /gradient/i.test(a.name ?? "") || /gradient/i.test(media?.name ?? "");
+            return {
+              ...a,
+              fit: a.fit ?? "contain",
+              gradient: a.gradient ?? (looksLikeGradient ? structuredClone(p.data.gradientStudio?.gradient ?? createProject().data.gradientStudio!.gradient) : undefined),
+            };
+          }),
+          paths: (p.data.paths || []).map((path: any) => ({ ...path, mode: path.mode ?? "curve", easing: path.easing ?? "linear" })),
           media: (p.data.media || []).map((m: any) => ({
             ...m,
             categoryId: m.categoryId ?? m.category ?? "cat-general",
@@ -159,6 +173,7 @@ export const useStore = create<AppState>((set, get) => {
           })),
         },
       }));
+      await Promise.all(projects.map((p) => saveProjectDb(p)));
       if (!projects.length) {
         const p = createProject("My First Scene");
         await saveProjectDb(p);
@@ -175,9 +190,10 @@ export const useStore = create<AppState>((set, get) => {
     setTab: (t) => set({ tab: t }),
     setTool: (t) => set({ tool: t }),
     setZoneDrawKeepClear: (v) => set({ zoneDrawKeepClear: v }),
-    select: (kind, id) => set({ selKind: kind, selId: id }),
+    select: (kind, id) => set({ selKind: kind, selId: id, selIds: kind === "asset" && id ? [id] : [] }),
     setActivePath: (id) => set({ activePathId: id }),
     setRuntimePreview: (v) => set({ runtimePreview: v }),
+    setRuntimePreviewSpeed: (v) => set({ runtimePreviewSpeed: v }),
 
     newProject: (name) => {
       const p = createProject(name);

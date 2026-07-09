@@ -8,54 +8,70 @@ interface Props {
   H: number;
 }
 
-// Floating toolbar that appears above the canvas when 2+ assets are selected.
-// Supports alignment, distribution, multi-resize, and multi-rotation.
-export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
-  if (selIds.length < 2) return null;
+type AlignMode =
+  | "canvas-left" | "canvas-hcenter" | "canvas-right"
+  | "canvas-top" | "canvas-vcenter" | "canvas-bottom"
+  | "group-left" | "group-hcenter" | "group-right"
+  | "group-top" | "group-vcenter" | "group-bottom";
 
-  const sel = assets.filter((a) => selIds.includes(a.id));
+function selectedIdsFromState(propIds: string[]) {
+  const st = useStore.getState();
+  const ids = propIds.length ? propIds : st.selKind === "asset" && st.selId ? [st.selId] : [];
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function boundsOf(targets: CanvasAsset[]) {
+  const minX = Math.min(...targets.map((a) => a.x));
+  const minY = Math.min(...targets.map((a) => a.y));
+  const maxX = Math.max(...targets.map((a) => a.x + a.width));
+  const maxY = Math.max(...targets.map((a) => a.y + a.height));
+  return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 };
+}
+
+// Floating toolbar that appears above the canvas when one or more assets are selected.
+// The first section always aligns the selected asset(s) to the canvas. Group-relative
+// align is shown separately for 2+ selections, so single-asset buttons never no-op.
+export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
+  const effectiveIds = selectedIdsFromState(selIds);
+  const sel = assets.filter((a) => effectiveIds.includes(a.id) && !a.locked);
   if (!sel.length) return null;
 
-  const applyAlign = (mode: string) => {
-    const st = useStore.getState();
-    // Use props selIds — guaranteed current, unlike store.selIds which may be stale on click
-    const ids = selIds;
-    if (ids.length < 2) return;
+  const applyAlign = (mode: AlignMode) => {
+    const ids = selectedIdsFromState(selIds);
+    if (!ids.length) return;
 
-    st.update((d) => {
+    useStore.getState().update((d) => {
       const targets = d.assets.filter((a) => ids.includes(a.id) && !a.locked);
-      if (targets.length === 0) return;
+      if (!targets.length) return;
 
-      const tMinX = Math.min(...targets.map((a) => a.x));
-      const tMinY = Math.min(...targets.map((a) => a.y));
-      const tMaxX = Math.max(...targets.map((a) => a.x + a.width));
-      const tMaxY = Math.max(...targets.map((a) => a.y + a.height));
-      const tCenterX = (tMinX + tMaxX) / 2;
-      const tCenterY = (tMinY + tMaxY) / 2;
+      const isGroup = mode.startsWith("group-");
+      if (isGroup && targets.length < 2) return;
+      const b = boundsOf(targets);
 
       targets.forEach((a) => {
-        if (mode === "left") a.x = tMinX;
-        else if (mode === "hcenter") a.x = tCenterX - a.width / 2;
-        else if (mode === "right") a.x = tMaxX - a.width;
-        else if (mode === "top") a.y = tMinY;
-        else if (mode === "vcenter") a.y = tCenterY - a.height / 2;
-        else if (mode === "bottom") a.y = tMaxY - a.height;
-        else if (mode === "canvas-left") a.x = 0;
-        else if (mode === "canvas-hcenter") a.x = (W - a.width) / 2;
-        else if (mode === "canvas-right") a.x = W - a.width;
-        else if (mode === "canvas-top") a.y = 0;
-        else if (mode === "canvas-vcenter") a.y = (H - a.height) / 2;
-        else if (mode === "canvas-bottom") a.y = H - a.height;
+        switch (mode) {
+          case "canvas-left": a.x = 0; break;
+          case "canvas-hcenter": a.x = (W - a.width) / 2; break;
+          case "canvas-right": a.x = W - a.width; break;
+          case "canvas-top": a.y = 0; break;
+          case "canvas-vcenter": a.y = (H - a.height) / 2; break;
+          case "canvas-bottom": a.y = H - a.height; break;
+          case "group-left": a.x = b.minX; break;
+          case "group-hcenter": a.x = b.centerX - a.width / 2; break;
+          case "group-right": a.x = b.maxX - a.width; break;
+          case "group-top": a.y = b.minY; break;
+          case "group-vcenter": a.y = b.centerY - a.height / 2; break;
+          case "group-bottom": a.y = b.maxY - a.height; break;
+        }
       });
-    }, false);
+    });
   };
 
   const applyDistribute = (axis: "x" | "y") => {
-    const st = useStore.getState();
-    const ids = selIds;
+    const ids = selectedIdsFromState(selIds);
     if (ids.length < 3) return;
 
-    st.update((d) => {
+    useStore.getState().update((d) => {
       const targets = d.assets.filter((a) => ids.includes(a.id) && !a.locked);
       if (targets.length < 3) return;
 
@@ -65,16 +81,16 @@ export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
         const totalGap = (last.x + last.width) - first.x - sorted.reduce((sum, x) => sum + x.width, 0);
         const gap = totalGap / (sorted.length - 1);
         let curX = first.x;
-        sorted.forEach(a => { a.x = curX; curX += a.width + gap; });
+        sorted.forEach((a) => { a.x = curX; curX += a.width + gap; });
       } else {
         const sorted = [...targets].sort((a, b) => a.y - b.y);
         const first = sorted[0], last = sorted[sorted.length - 1];
         const totalGap = (last.y + last.height) - first.y - sorted.reduce((sum, x) => sum + x.height, 0);
         const gap = totalGap / (sorted.length - 1);
         let curY = first.y;
-        sorted.forEach(a => { a.y = curY; curY += a.height + gap; });
+        sorted.forEach((a) => { a.y = curY; curY += a.height + gap; });
       }
-    }, false);
+    });
   };
 
   const AlignIcon = ({ type }: { type: string }) => {
@@ -91,45 +107,58 @@ export default function CanvasToolbar({ selIds, assets, W, H }: Props) {
     return <>{icons[type] || null}</>;
   };
 
-  const Btn = ({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title?: string }) => (
+  const Btn = ({ children, onPress, title }: { children: React.ReactNode; onPress: () => void; title?: string }) => (
     <button
       type="button"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClick(); }}
+      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onPress(); }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
       title={title}
-      className="h-8 w-8 flex items-center justify-center rounded-md text-slate-300 hover:bg-violet-500/30 hover:text-white border border-transparent hover:border-slate-600 bg-slate-800/40 cursor-pointer"
+      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-transparent bg-slate-800/40 text-slate-300 hover:border-slate-600 hover:bg-violet-500/30 hover:text-white"
     >
       {children}
     </button>
   );
 
   return (
-    <div className="pointer-events-auto absolute left-1/2 bottom-4 z-[70] -translate-x-1/2 flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur">
+    <div
+      className="pointer-events-auto absolute left-1/2 bottom-4 z-[9999] flex -translate-x-1/2 items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur"
+      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+    >
       <div className="flex items-center gap-0.5 px-1.5">
-        <Btn title="Align Left" onClick={() => applyAlign("left")}><AlignIcon type="left" /></Btn>
-        <Btn title="Align Center H" onClick={() => applyAlign("hcenter")}><AlignIcon type="hcenter" /></Btn>
-        <Btn title="Align Right" onClick={() => applyAlign("right")}><AlignIcon type="right" /></Btn>
+        <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">Canvas</span>
+        <Btn title="Canvas Left" onPress={() => applyAlign("canvas-left")}><AlignIcon type="left" /></Btn>
+        <Btn title="Canvas Center H" onPress={() => applyAlign("canvas-hcenter")}><AlignIcon type="hcenter" /></Btn>
+        <Btn title="Canvas Right" onPress={() => applyAlign("canvas-right")}><AlignIcon type="right" /></Btn>
         <div className="mx-1 h-6 w-px bg-slate-700" />
-        <Btn title="Align Top" onClick={() => applyAlign("top")}><AlignIcon type="top" /></Btn>
-        <Btn title="Align Center V" onClick={() => applyAlign("vcenter")}><AlignIcon type="vcenter" /></Btn>
-        <Btn title="Align Bottom" onClick={() => applyAlign("bottom")}><AlignIcon type="bottom" /></Btn>
+        <Btn title="Canvas Top" onPress={() => applyAlign("canvas-top")}><AlignIcon type="top" /></Btn>
+        <Btn title="Canvas Center V" onPress={() => applyAlign("canvas-vcenter")}><AlignIcon type="vcenter" /></Btn>
+        <Btn title="Canvas Bottom" onPress={() => applyAlign("canvas-bottom")}><AlignIcon type="bottom" /></Btn>
       </div>
-      <div className="mx-1 h-6 w-px bg-slate-700" />
-      <div className="flex items-center gap-0.5 px-1.5">
-        <Btn title="To Canvas Left" onClick={() => applyAlign("canvas-left")}><AlignIcon type="left" /></Btn>
-        <Btn title="To Canvas Center H" onClick={() => applyAlign("canvas-hcenter")}><AlignIcon type="hcenter" /></Btn>
-        <Btn title="To Canvas Right" onClick={() => applyAlign("canvas-right")}><AlignIcon type="right" /></Btn>
-        <div className="mx-1 h-6 w-px bg-slate-700" />
-        <Btn title="To Canvas Top" onClick={() => applyAlign("canvas-top")}><AlignIcon type="top" /></Btn>
-        <Btn title="To Canvas Center V" onClick={() => applyAlign("canvas-vcenter")}><AlignIcon type="vcenter" /></Btn>
-        <Btn title="To Canvas Bottom" onClick={() => applyAlign("canvas-bottom")}><AlignIcon type="bottom" /></Btn>
-      </div>
+
+      {sel.length >= 2 && (
+        <>
+          <div className="mx-1 h-6 w-px bg-slate-700" />
+          <div className="flex items-center gap-0.5 px-1.5">
+            <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">Group</span>
+            <Btn title="Group Left" onPress={() => applyAlign("group-left")}><AlignIcon type="left" /></Btn>
+            <Btn title="Group Center H" onPress={() => applyAlign("group-hcenter")}><AlignIcon type="hcenter" /></Btn>
+            <Btn title="Group Right" onPress={() => applyAlign("group-right")}><AlignIcon type="right" /></Btn>
+            <div className="mx-1 h-6 w-px bg-slate-700" />
+            <Btn title="Group Top" onPress={() => applyAlign("group-top")}><AlignIcon type="top" /></Btn>
+            <Btn title="Group Center V" onPress={() => applyAlign("group-vcenter")}><AlignIcon type="vcenter" /></Btn>
+            <Btn title="Group Bottom" onPress={() => applyAlign("group-bottom")}><AlignIcon type="bottom" /></Btn>
+          </div>
+        </>
+      )}
+
       {sel.length >= 3 && (
         <>
           <div className="mx-1 h-6 w-px bg-slate-700" />
           <div className="flex items-center gap-0.5 px-1.5">
-            <Btn title="Distribute Horizontally" onClick={() => applyDistribute("x")}><AlignIcon type="distH" /></Btn>
-            <Btn title="Distribute Vertically" onClick={() => applyDistribute("y")}><AlignIcon type="distV" /></Btn>
+            <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">Distribute</span>
+            <Btn title="Distribute Horizontally" onPress={() => applyDistribute("x")}><AlignIcon type="distH" /></Btn>
+            <Btn title="Distribute Vertically" onPress={() => applyDistribute("y")}><AlignIcon type="distV" /></Btn>
           </div>
         </>
       )}

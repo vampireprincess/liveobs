@@ -1,6 +1,6 @@
 import { useStore } from "../../store";
-import { Btn, Field, Panel, TextInput, Toggle } from "../ui";
-import type { MotionPath } from "../../types";
+import { Btn, Field, Panel, Select, TextInput, Toggle } from "../ui";
+import type { MotionPath, PathMode, PathEasing } from "../../types";
 
 export default function PathInspector() {
   const data = useStore((s) => s.data())!;
@@ -16,9 +16,34 @@ export default function PathInspector() {
         <Field label="Color">
           <input type="color" value={p.color} onChange={(e) => set({ color: e.target.value })} className="h-9 w-full rounded" />
         </Field>
+        <Field label="Path type">
+          <Select<PathMode>
+            value={p.mode ?? "curve"}
+            onChange={(v) => set({ mode: v })}
+            options={[
+              { value: "curve", label: "Curves / Bezier" },
+              { value: "angle", label: "Angles / Straight lines" },
+            ]}
+          />
+        </Field>
+        <Field label="Path easing">
+          <Select<PathEasing>
+            value={p.easing ?? "linear"}
+            onChange={(v) => set({ easing: v })}
+            options={[
+              { value: "linear", label: "Linear" },
+              { value: "ease-in", label: "Ease in" },
+              { value: "ease-out", label: "Ease out" },
+              { value: "ease-in-out", label: "Ease in/out" },
+              { value: "smoothstep", label: "Smoothstep" },
+              { value: "sine", label: "Sine" },
+              { value: "bounce", label: "Bounce out" },
+            ]}
+          />
+        </Field>
         <Toggle label={p.closed ? "Closed loop" : "Open path"} checked={p.closed} onChange={(v) => set({ closed: v })} />
         <div className="rounded-md bg-slate-800/40 p-2 text-[11px] text-slate-400">
-          {p.points.length} points. Use the <b>Pen tool</b> (Paths tab) and click the canvas to add points. Drag squares to move points, circles to shape bezier curves.
+          {p.points.length} points. Use the <b>Pen tool</b> (Paths tab) and click the canvas to add points. Drag squares to move points{(p.mode ?? "curve") === "curve" ? ", circles to shape bezier curves" : ". Angle mode uses straight line segments"}.
         </div>
         <div className="flex gap-1.5">
           <Btn className="flex-1" onClick={() => set({ points: p.points.slice(0, -1) })}>Remove last point</Btn>

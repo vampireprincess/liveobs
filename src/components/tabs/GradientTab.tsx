@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { useStore } from "../../store";
 import { Panel, Slider, Select, Toggle, Btn } from "../ui";
 import GradientBar from "../GradientBar";
-import { uid } from "../../factory";
+import { uid, newCanvasAsset, defaultSchedule } from "../../factory";
 import type { GradientConfig, GradientMode, SavedGradient, SavedPalette, ColorStop } from "../../types";
 import { computeGradientAnim } from "../../gradientMath";
 import {
@@ -14,6 +14,19 @@ import {
 } from "../../paletteUtils";
 
 // Direction presets that map to gradient type+angle
+const MODERN_PRESETS: { name: string; colors: string[]; type?: GradientConfig["type"]; angle?: number }[] = [
+  { name: "Aurora", colors: ["#22d3ee", "#a855f7", "#f472b6"], angle: 135 },
+  { name: "Sunset", colors: ["#f97316", "#ec4899", "#7c3aed"], angle: 45 },
+  { name: "Cyber", colors: ["#00f5ff", "#0614ff", "#ff00e5"], angle: 120 },
+  { name: "Mint", colors: ["#d9f99d", "#34d399", "#0f766e"], angle: 90 },
+  { name: "Fire", colors: ["#7f1d1d", "#ef4444", "#facc15"], angle: 35 },
+  { name: "Ocean", colors: ["#020617", "#0369a1", "#67e8f9"], angle: 160 },
+  { name: "Peach", colors: ["#fff7ed", "#fdba74", "#fb7185"], angle: 70 },
+  { name: "Galaxy", colors: ["#0f172a", "#4c1d95", "#db2777", "#fde68a"], type: "radial" },
+  { name: "Lime", colors: ["#1a2e05", "#65a30d", "#ecfccb"], angle: 110 },
+  { name: "Ice", colors: ["#e0f2fe", "#38bdf8", "#312e81"], angle: 180 },
+];
+
 const DIRECTIONS: { type: GradientConfig["type"]; angle: number }[] = [
   { type: "linear", angle: 0 },
   { type: "linear", angle: 45 },
@@ -87,8 +100,38 @@ export default function GradientTab() {
   const setGrad = (patch: Partial<GradientConfig>) =>
     upd((d) => {
       const cur = d.gradientStudio ?? studio;
-      d.gradientStudio = { ...cur, gradient: { ...cur.gradient, ...patch } };
+      const nextGradient = { ...cur.gradient, ...patch };
+      d.gradientStudio = { ...cur, gradient: nextGradient };
     });
+
+  const applyModernPreset = (preset: typeof MODERN_PRESETS[number]) => {
+    const stops = preset.colors.map((color, i) => ({ id: uid(), color, offset: preset.colors.length === 1 ? 0 : i / (preset.colors.length - 1) }));
+    setGrad({ stops, type: preset.type ?? "linear", angle: preset.angle ?? g.angle });
+  };
+
+  const addGradientAsLayerAsset = () => {
+    const css = getGradientCss(g);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${data.canvasWidth}" height="${data.canvasHeight}" viewBox="0 0 ${data.canvasWidth} ${data.canvasHeight}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;background:${css};"></div></foreignObject></svg>`;
+    const encoded = btoa(unescape(encodeURIComponent(svg)));
+    const dataUrl = `data:image/svg+xml;base64,${encoded}`;
+    const media = {
+      id: uid(),
+      name: "Gradient Layer",
+      type: "svg" as const,
+      dataUrl,
+      width: data.canvasWidth,
+      height: data.canvasHeight,
+      categoryId: "static-assets",
+      schedule: defaultSchedule(),
+      inLibrary: false,
+    };
+    useStore.getState().addMedia(media);
+    const layer = data.layers.find((l) => l.id === "layer-bg") ?? data.layers[0];
+    const asset = newCanvasAsset(media.id, layer.id, media);
+    Object.assign(asset, { x: 0, y: 0, width: data.canvasWidth, height: data.canvasHeight, name: "Gradient Layer", fit: "fill" as const, opacity: 0.65, blend: "overlay" as const, gradient: structuredClone(g) });
+    useStore.getState().addAsset(asset);
+    useStore.getState().select("asset", asset.id);
+  };
 
   // ---- color palette ----
   const fileRef = useRef<HTMLInputElement>(null);
@@ -100,6 +143,30 @@ export default function GradientTab() {
 
   const [savedPalettes, setSavedPalettes] = useState<SavedPalette[]>([]);
   const [savedGradients, setSavedGradients] = useState<SavedGradient[]>([]);
+  const paletteUndo = useRef<{ paletteColors: string[]; activeColors: boolean[]; savedPalettes: SavedPalette[] }[]>([]);
+
+  const pushPaletteUndo = () => {
+    paletteUndo.current = [...paletteUndo.current, { paletteColors, activeColors, savedPalettes }].slice(-30);
+  };
+  const undoPalette = () => {
+    const prev = paletteUndo.current.pop();
+    if (!prev) return;
+    setPaletteColors(prev.paletteColors);
+    setActiveColors(prev.activeColors);
+    setSavedPalettes(prev.savedPalettes);
+    saveSavedPalettes(prev.savedPalettes);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      if (!paletteUndo.current.length) return;
+      e.preventDefault();
+      undoPalette();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [paletteColors, activeColors, savedPalettes]);
 
   useEffect(() => {
     setSavedPalettes(loadSavedPalettes());
@@ -109,6 +176,7 @@ export default function GradientTab() {
   const runExtract = async (dataUrl: string, n: number) => {
     setBusy(true);
     const colors = await extractColorsFromImage(dataUrl, n);
+    pushPaletteUndo();
     setPaletteColors(colors);
     setActiveColors(colors.map(() => true));
     setBusy(false);
@@ -140,6 +208,7 @@ export default function GradientTab() {
 
   const savePalette = () => {
     if (!enabledColors.length) return;
+    pushPaletteUndo();
     const p: SavedPalette = { id: uid(), name: "Palette " + (savedPalettes.length + 1), colors: enabledColors };
     const next = [p, ...savedPalettes];
     setSavedPalettes(next);
@@ -147,11 +216,13 @@ export default function GradientTab() {
   };
 
   const applySavedPalette = (p: SavedPalette) => {
+    pushPaletteUndo();
     setPaletteColors(p.colors);
     setActiveColors(p.colors.map(() => true));
   };
 
   const deleteSavedPalette = (id: string) => {
+    pushPaletteUndo();
     const next = savedPalettes.filter((p) => p.id !== id);
     setSavedPalettes(next);
     saveSavedPalettes(next);
@@ -203,14 +274,15 @@ export default function GradientTab() {
               {paletteColors.map((c, i) => (
                 <button
                   key={i}
-                  onClick={() => setActiveColors((a) => a.map((v, idx) => (idx === i ? !v : v)))}
+                  onClick={() => { pushPaletteUndo(); setActiveColors((a) => a.map((v, idx) => (idx === i ? !v : v))); }}
                   title={c}
                   className={`aspect-square rounded border-2 ${activeColors[i] ? "border-white" : "border-transparent opacity-25"}`}
                   style={{ background: c }}
                 />
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              <Btn onClick={undoPalette}>↶ Undo Swatch</Btn>
               <Btn onClick={savePalette}>💾 Save Swatch</Btn>
               <Btn variant="primary" onClick={makeGradientFromPalette}>→ Make Gradient</Btn>
             </div>
@@ -241,6 +313,22 @@ export default function GradientTab() {
       <Panel title="🌈 Gradient Studio">
         {/* live, real-time animated preview */}
         <LiveGradientPreview g={g} />
+        <div>
+          <div className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Modern presets</div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {MODERN_PRESETS.map((preset) => (
+              <button
+                key={preset.name}
+                title={preset.name}
+                onClick={() => applyModernPreset(preset)}
+                className="aspect-square rounded-md border border-slate-700 hover:border-violet-400"
+                style={{ background: preset.type === "radial" ? `radial-gradient(circle, ${preset.colors.join(", ")})` : `linear-gradient(${preset.angle ?? 135}deg, ${preset.colors.join(", ")})` }}
+              />
+            ))}
+          </div>
+        </div>
+        <Btn className="w-full" onClick={addGradientAsLayerAsset}>➕ Add current gradient as canvas layer asset</Btn>
+        <p className="text-[10px] text-slate-500">Creates a full-canvas gradient layer asset, so you can reorder it with images and use opacity/blend mode in the Asset Inspector.</p>
 
         <div>
           <div className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Apply Gradient To</div>
@@ -255,7 +343,7 @@ export default function GradientTab() {
             ).map((m) => (
               <button
                 key={m.v}
-                onClick={() => setStudio({ mode: m.v })}
+                onClick={() => { setStudio({ mode: m.v }); if (m.v === "background" || m.v === "hybrid") window.setTimeout(addGradientAsLayerAsset, 0); }}
                 className={`rounded border px-1 py-1.5 text-[10px] font-medium ${
                   studio.mode === m.v ? "border-violet-500 bg-violet-500/20 text-violet-200" : "border-slate-700 bg-slate-800/40 text-slate-300"
                 }`}

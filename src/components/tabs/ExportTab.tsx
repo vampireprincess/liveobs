@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useStore } from "../../store";
 import { exportZip, exportSingleHtml } from "../../runtime/exportHtml";
 import { Btn, Field, NumberInput, Panel, Select, Slider, Toggle } from "../ui";
@@ -15,9 +16,41 @@ export default function ExportTab() {
   const data = useStore((s) => s.data())!;
   const project = useStore((s) => s.current())!;
   const upd = useStore.getState().update;
+  const [bgSizeAssetId, setBgSizeAssetId] = useState("");
+
+  const backgroundSizeAssets = useMemo(() => {
+    const bgLayerIds = new Set(data.layers.filter((l) => l.id === "layer-bg" || l.name.toLowerCase().includes("background")).map((l) => l.id));
+    const bgAssets = data.assets.filter((a) => a.visible && bgLayerIds.has(a.layerId));
+    return bgAssets.length ? bgAssets : data.assets.filter((a) => a.visible && a.layerId !== "layer-rand");
+  }, [data.assets, data.layers]);
+  const selectedBgAsset = backgroundSizeAssets.find((a) => a.id === bgSizeAssetId) ?? backgroundSizeAssets[0];
+
+  const setCanvasFromAsset = () => {
+    if (!selectedBgAsset) return;
+    // Important: only the canvas/base resolution changes. The selected asset keeps
+    // the same x/y/width/height so the canvas is resized underneath it.
+    upd((d) => {
+      d.canvasWidth = Math.max(320, Math.round(selectedBgAsset.width));
+      d.canvasHeight = Math.max(240, Math.round(selectedBgAsset.height));
+    });
+    window.dispatchEvent(new CustomEvent("liveobs-force-runtime-rebuild"));
+  };
 
   const sizeKey = `${data.canvasWidth}x${data.canvasHeight}`;
   const known = SIZES.some((s) => s.value === sizeKey) ? sizeKey : "custom";
+  const usedMediaIds = new Set(
+    data.assets
+      .filter((a) => {
+        if (data.layers.find((l) => l.id === a.layerId)?.visible === false) return false;
+        if (a.layerId !== "layer-rand") return a.visible;
+        if (a.visible) return true;
+        const media = data.media.find((m) => m.id === a.mediaId);
+        const schedule: any = media?.schedule;
+        return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+      })
+      .map((a) => a.mediaId)
+      .filter(Boolean)
+  );
 
   return (
     <div>
@@ -44,6 +77,19 @@ export default function ExportTab() {
             <NumberInput value={data.canvasHeight} onChange={(v) => upd((d) => (d.canvasHeight = Math.max(240, v)))} />
           </Field>
         </div>
+        {backgroundSizeAssets.length > 0 && (
+          <div className="rounded-md border border-slate-800 bg-slate-950/40 p-2">
+            <Field label="Custom base resolution from background asset">
+              <Select
+                value={selectedBgAsset?.id ?? ""}
+                onChange={setBgSizeAssetId}
+                options={backgroundSizeAssets.map((a) => ({ value: a.id, label: `${a.name} · placed ${Math.round(a.width)}×${Math.round(a.height)}` }))}
+              />
+            </Field>
+            <Btn className="w-full" onClick={setCanvasFromAsset}>Use current asset size as canvas</Btn>
+            <p className="mt-1 text-[10px] text-slate-500">Only canvas/base resolution changes. The background asset stays at the same position and size.</p>
+          </div>
+        )}
         {!data.bgGradient?.enabled && (
           <Field label="Background Color">
             <input type="color" value={data.bgColor} onChange={(e) => upd((d) => (d.bgColor = e.target.value))} className="h-9 w-full rounded" />
@@ -96,7 +142,7 @@ export default function ExportTab() {
         <Slider label="Crossfade (sec)" min={0} max={10} step={0.5} value={data.bgRotation.crossfadeSec} onChange={(v) => upd((d) => (d.bgRotation.crossfadeSec = v))} />
         <Field label="Background images (from library)">
           <div className="grid grid-cols-4 gap-1.5">
-            {data.media.filter((m) => m.type !== "video").map((m) => {
+            {data.media.filter((m) => m.type !== "video" && usedMediaIds.has(m.id)).map((m) => {
               const on = data.bgRotation.mediaIds.includes(m.id);
               return (
                 <button

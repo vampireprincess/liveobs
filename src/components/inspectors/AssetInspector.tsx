@@ -1,6 +1,6 @@
 import { useStore } from "../../store";
 import { Btn, Field, NumberInput, Panel, Select, Slider, TextInput, Toggle } from "../ui";
-import type { AssetFit, BlendMode, ShapeKind, BehaviorAnimation } from "../../types";
+import type { AssetFit, BlendMode, ShapeKind, BehaviorAnimation, OneShotAnimation } from "../../types";
 
 const REF_POINTS = [
   [0, 0], [0.5, 0], [1, 0],
@@ -13,7 +13,10 @@ export default function AssetInspector() {
   const selId = useStore((s) => s.selId)!;
   const a = data.assets.find((x) => x.id === selId);
   if (!a) return null;
-  const set = (patch: Partial<typeof a>) => useStore.getState().updateAsset(a.id, patch);
+  const set = (patch: Partial<typeof a>) => useStore.getState().update((d) => {
+    const target = d.assets.find((x) => x.id === a.id);
+    if (target) Object.assign(target, patch);
+  });
 
   const media = a.mediaId ? data.media.find((m) => m.id === a.mediaId) : undefined;
   const W = data.canvasWidth;
@@ -26,17 +29,33 @@ export default function AssetInspector() {
     });
   };
 
+  const mediaRatio = (media?.width ?? a.width) / Math.max(1, media?.height ?? a.height);
+  const isMediaAsset = !a.shape && !!media && !a.gradient;
+
   const canvasFill = (fit: AssetFit) => {
-    set({ x: 0, y: 0, width: W, height: H, fit });
+    if (a.gradient) { set({ x: 0, y: 0, width: W, height: H, fit: "fill" }); return; }
+    if (!isMediaAsset) { set({ x: 0, y: 0, width: W, height: H, fit }); return; }
+    const containScale = Math.min(W / Math.max(1, media?.width ?? a.width), H / Math.max(1, media?.height ?? a.height));
+    const coverScale = Math.max(W / Math.max(1, media?.width ?? a.width), H / Math.max(1, media?.height ?? a.height));
+    const s = fit === "cover" || fit === "fill" ? coverScale : containScale;
+    const width = Math.round((media?.width ?? a.width) * s);
+    const height = Math.round((media?.height ?? a.height) * s);
+    set({ x: Math.round((W - width) / 2), y: Math.round((H - height) / 2), width, height, fit: fit === "fill" ? "cover" : fit });
+  };
+  const resizeByWidth = (width: number) => {
+    const nextW = Math.max(10, width);
+    set(isMediaAsset ? { width: nextW, height: Math.max(10, Math.round(nextW / mediaRatio)) } : { width: nextW });
+  };
+  const resizeByHeight = (height: number) => {
+    const nextH = Math.max(10, height);
+    set(isMediaAsset ? { height: nextH, width: Math.max(10, Math.round(nextH * mediaRatio)) } : { height: nextH });
   };
 
-  const mediaRatio = (media?.width ?? a.width) / Math.max(1, media?.height ?? a.height);
-
   const sizePresets: { label: string; apply: () => void }[] = [
-    { label: "Full canvas", apply: () => set({ x: 0, y: 0, width: W, height: H }) },
-    { label: "½ canvas", apply: () => set({ width: W / 2, height: H / 2 }) },
-    { label: "⅓ canvas", apply: () => set({ width: W / 3, height: H / 3 }) },
-    { label: "¼ canvas", apply: () => set({ width: W / 4, height: H / 4 }) },
+    { label: "Full canvas", apply: () => canvasFill("contain") },
+    { label: "½ canvas", apply: () => resizeByWidth(W / 2) },
+    { label: "⅓ canvas", apply: () => resizeByWidth(W / 3) },
+    { label: "¼ canvas", apply: () => resizeByWidth(W / 4) },
     {
       label: "Fit width",
       apply: () => set({ x: 0, width: W, height: Math.round(W / mediaRatio) }),
@@ -88,6 +107,9 @@ export default function AssetInspector() {
           <Toggle label="Visible" checked={a.visible} onChange={(v) => set({ visible: v })} />
           <Toggle label="Locked" checked={a.locked} onChange={(v) => set({ locked: v })} />
         </div>
+        {(media?.type === "lottie" || media?.type === "svg") && (
+          <Btn variant="primary" className="w-full" onClick={() => useStore.getState().setTab(media.type === "lottie" ? "lottie" : "svg")}>✏️ Edit {media.type.toUpperCase()}</Btn>
+        )}
         <div className="flex gap-1.5">
           <Btn className="flex-1" onClick={() => useStore.getState().duplicateAsset(a.id)}>⧉ Duplicate</Btn>
           <Btn variant="danger" onClick={() => { useStore.getState().removeAsset(a.id); useStore.getState().select(null, null); }}>🗑</Btn>
@@ -98,8 +120,8 @@ export default function AssetInspector() {
         <div className="grid grid-cols-4 gap-1.5">
           <Field label="X"><NumberInput value={a.x} onChange={(v) => set({ x: v })} /></Field>
           <Field label="Y"><NumberInput value={a.y} onChange={(v) => set({ y: v })} /></Field>
-          <Field label="W"><NumberInput value={a.width} onChange={(v) => set({ width: Math.max(10, v) })} /></Field>
-          <Field label="H"><NumberInput value={a.height} onChange={(v) => set({ height: Math.max(10, v) })} /></Field>
+          <Field label="W"><NumberInput value={a.width} onChange={resizeByWidth} /></Field>
+          <Field label="H"><NumberInput value={a.height} onChange={resizeByHeight} /></Field>
         </div>
         <Slider label="Rotation" min={-180} max={180} value={a.rotation} onChange={(v) => set({ rotation: v })} format={(v) => `${v}°`} />
         <Slider label="Opacity" min={0} max={1} step={0.05} value={a.opacity} onChange={(v) => set({ opacity: v })} format={(v) => `${Math.round(v * 100)}%`} />
@@ -176,6 +198,10 @@ export default function AssetInspector() {
                   { value: "ellipse", label: "Ellipse" },
                   { value: "triangle", label: "Triangle" },
                   { value: "line", label: "Line" },
+                  { value: "diamond", label: "Diamond" },
+                  { value: "pentagon", label: "Pentagon" },
+                  { value: "hexagon", label: "Hexagon" },
+                  { value: "star", label: "Star" },
                 ]}
               />
             </Field>
@@ -212,6 +238,14 @@ export default function AssetInspector() {
               { value: "wiggle", label: "Wiggling (Side-to-Side)" },
               { value: "skew", label: "Skewing" },
               { value: "blur", label: "Focus Pulse (Blur)" },
+              { value: "heartbeat", label: "Heartbeat" },
+              { value: "sway", label: "Sway" },
+              { value: "jelly", label: "Jelly / Squash" },
+              { value: "breathe", label: "Breathe" },
+              { value: "drift", label: "Drift" },
+              { value: "glitch", label: "Glitch" },
+              { value: "orbit", label: "Orbit" },
+              { value: "tada", label: "Tada" },
             ]}
           />
         </Field>
@@ -239,6 +273,48 @@ export default function AssetInspector() {
             </Field>
           </div>
         )}
+      </Panel>
+
+      <Panel title="Entrance Animation" defaultCollapsed>
+        <Field label="How asset appears">
+          <Select
+            value={a.entranceAnim || "none"}
+            onChange={(v) => set({ entranceAnim: v as OneShotAnimation })}
+            options={[
+              { value: "none", label: "None" },
+              { value: "fade", label: "Fade in" },
+              { value: "scale", label: "Scale in" },
+              { value: "pop", label: "Pop in" },
+              { value: "spin", label: "Spin in" },
+              { value: "slide-up", label: "Slide up" },
+              { value: "slide-down", label: "Slide down" },
+              { value: "slide-left", label: "Slide left" },
+              { value: "slide-right", label: "Slide right" },
+            ]}
+          />
+        </Field>
+        {(a.entranceAnim && a.entranceAnim !== "none") && <Slider label="Entrance duration" min={0.1} max={10} step={0.1} value={a.entranceDuration ?? 0.6} onChange={(v) => set({ entranceDuration: v })} format={(v) => `${v}s`} />}
+      </Panel>
+
+      <Panel title="Exit Animation" defaultCollapsed>
+        <Field label="How asset disappears">
+          <Select
+            value={a.exitAnim || "none"}
+            onChange={(v) => set({ exitAnim: v as OneShotAnimation })}
+            options={[
+              { value: "none", label: "None" },
+              { value: "fade", label: "Fade out" },
+              { value: "scale", label: "Scale out" },
+              { value: "pop", label: "Pop out" },
+              { value: "spin", label: "Spin out" },
+              { value: "slide-up", label: "Slide up" },
+              { value: "slide-down", label: "Slide down" },
+              { value: "slide-left", label: "Slide left" },
+              { value: "slide-right", label: "Slide right" },
+            ]}
+          />
+        </Field>
+        {(a.exitAnim && a.exitAnim !== "none") && <Slider label="Exit duration" min={0.1} max={10} step={0.1} value={a.exitDuration ?? 0.6} onChange={(v) => set({ exitDuration: v })} format={(v) => `${v}s`} />}
       </Panel>
 
       <Panel title="Glow / Drop Shadow" defaultCollapsed>

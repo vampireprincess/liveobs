@@ -1,13 +1,30 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useStore } from "../store";
-import type { CanvasAsset, MotionPath, Zone } from "../types";
+import type { CanvasAsset, MotionPath, Zone, RuntimePreviewSpeed, ProjectData } from "../types";
 import { RuntimeEngine, pathSvgD, behaviorTransform } from "../runtime/engine";
+import { computeGradientAnim, gradientCss } from "../gradientMath";
 import { uid, newShapeAsset } from "../factory";
 import EditorParticles from "./EditorParticles";
 import CanvasToolsBar from "./CanvasToolsBar";
 import GradientBackgroundLayer from "./GradientBackgroundLayer";
 import CanvasToolbar from "./CanvasToolbar";
 import lottie from "lottie-web";
+
+const RUNTIME_SPEEDS: RuntimePreviewSpeed[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+function assetAspectRatio(a: CanvasAsset, data: ProjectData): number {
+  const media = a.mediaId ? data.media.find((m) => m.id === a.mediaId) : undefined;
+  const ratio = !a.shape && media?.width && media?.height ? media.width / Math.max(1, media.height) : a.width / Math.max(1, a.height);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+}
+
+function formatRuntimeTime(totalSeconds: number): string {
+  const total = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 type DragState =
   | { mode: "marquee"; sx: number; sy: number; cx: number; cy: number }
@@ -26,6 +43,7 @@ type DragState =
 export default function Canvas() {
   const data = useStore((s) => s.data());
   const runtimePreview = useStore((s) => s.runtimePreview);
+  const runtimePreviewSpeed = useStore((s) => s.runtimePreviewSpeed);
   const tool = useStore((s) => s.tool);
   const selKind = useStore((s) => s.selKind);
   const selId = useStore((s) => s.selId);
@@ -40,6 +58,8 @@ export default function Canvas() {
   const [scale, setScale] = useState(0.5);
   const [drag, setDrag] = useState<DragState>(null);
   const [snapLines, setSnapLines] = useState<{x?: number, y?: number}>({});
+  const [simulatedSeconds, setSimulatedSeconds] = useState(0);
+  const [runtimeRebuildNonce, setRuntimeRebuildNonce] = useState(0);
   const dragRef = useRef<DragState>(null);
   dragRef.current = drag;
 
@@ -54,13 +74,35 @@ export default function Canvas() {
   }, [W, H]);
 
   useEffect(() => {
+    const handler = () => setRuntimeRebuildNonce((n) => n + 1);
+    window.addEventListener("liveobs-force-runtime-rebuild", handler);
+    return () => window.removeEventListener("liveobs-force-runtime-rebuild", handler);
+  }, []);
+
+  useEffect(() => {
     if (!data || !runtimeRef.current) return;
     if (runtimePreview) {
-      const eng = new RuntimeEngine(runtimeRef.current, data, { editorMode: false, simulateFast: true });
+      const eng = new RuntimeEngine(runtimeRef.current, data, { editorMode: false, timeScale: runtimePreviewSpeed });
       engineRef.current = eng; eng.start(); (window as any).__engine = eng;
-      return () => { eng.destroy(); engineRef.current = null; };
+      setSimulatedSeconds(0);
+      return () => { eng.destroy(); engineRef.current = null; setSimulatedSeconds(0); };
     }
-  }, [runtimePreview, data]);
+  }, [runtimePreview, data, runtimeRebuildNonce]);
+
+  useEffect(() => {
+    engineRef.current?.setTimeScale(runtimePreviewSpeed);
+  }, [runtimePreviewSpeed]);
+
+  useEffect(() => {
+    if (!runtimePreview) return;
+    let raf = 0;
+    const tick = () => {
+      setSimulatedSeconds(engineRef.current?.elapsedSec() ?? 0);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [runtimePreview]);
 
   const toCanvas = useCallback((clientX: number, clientY: number) => {
     if (!stageRef.current) return { x: 0, y: 0 };
@@ -83,6 +125,17 @@ export default function Canvas() {
         });
       });
       st.select("asset", primaryNewId); useStore.setState({ selIds: newIds }); return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      const exists = st.selIds.includes(a.id);
+      const nextIds = exists ? st.selIds.filter((id) => id !== a.id) : [...st.selIds, a.id];
+      if (nextIds.length) {
+        const primary = exists ? nextIds[0] : a.id;
+        useStore.setState({ selKind: "asset", selId: primary, selIds: nextIds });
+      } else {
+        st.select(null, null);
+      }
+      return;
     }
     if (!st.selIds.includes(a.id)) { st.select("asset", a.id); useStore.setState({ selIds: [a.id] }); }
     const p = toCanvas(e.clientX, e.clientY);
@@ -133,7 +186,7 @@ export default function Canvas() {
     if (tool === "path") {
       if (!activePathId) {
         const count = st.data()?.paths.length || 0;
-        const np: MotionPath = { id: uid(), name: `Path ${count + 1}`, closed: false, color: "#38bdf8", points: [{ id: uid(), x: p.x, y: p.y, hIn: { x: -60, y: 0 }, hOut: { x: 60, y: 0 } }] };
+        const np: MotionPath = { id: uid(), name: `Path ${count + 1}`, closed: false, color: "#38bdf8", mode: "curve", points: [{ id: uid(), x: p.x, y: p.y, hIn: { x: -60, y: 0 }, hOut: { x: 60, y: 0 } }] };
         st.addPath(np); st.setActivePath(np.id); st.select("path", np.id); return;
       }
       const path = st.data()!.paths.find((x) => x.id === activePathId);
@@ -181,33 +234,38 @@ export default function Canvas() {
         } else { st.updateAsset(d.id, { x: d.ox + dx, y: d.oy + dy }); }
       } else if (d.mode === "resize") {
         let { ox, oy, ow, oh } = d; const dx = p.x - d.sx, dy = p.y - d.sy;
-        
-        // Lock aspect ratio by default for images to prevent empty space in bounding box
-        const asset = st.data()!.assets.find(a => a.id === d.id);
-        const isImage = asset && !asset.shape && asset.fit !== 'fill';
-        const lockRatio = e.shiftKey || isImage; // Always lock for images unless we add a specific unlock key
-        
-        if (d.handle.includes("e")) ow = Math.max(20, d.ow + dx); 
-        if (d.handle.includes("s")) oh = Math.max(20, d.oh + dy); 
-        if (d.handle.includes("w")) { ow = Math.max(20, d.ow - dx); ox = d.ox + dx; } 
-        if (d.handle.includes("n")) { oh = Math.max(20, d.oh - dy); oy = d.oy + dy; }
-        
-        if (lockRatio && d.ow > 0 && d.oh > 0) {
-          const ratio = d.ow / d.oh;
-          if (d.handle.length === 2) { // Corner resize
-             if (Math.abs(dx) > Math.abs(dy)) oh = ow / ratio; else ow = oh * ratio;
-             // Adjust position if resizing from top/left to keep opposite corner fixed
-             if (d.handle.includes("w")) ox = d.ox + (d.ow - ow);
-             if (d.handle.includes("n")) oy = d.oy + (d.oh - oh);
-          } else { // Edge resize - simpler to just adjust one dimension or expand both? Usually edge resize doesn't lock ratio well without jumping. Let's stick to corner locking or shift-lock.
-             // Actually, for edge resize with lock ratio, it's tricky. Let's just use shift for explicit lock.
-             if (e.shiftKey) {
-                if (d.handle.includes("e") || d.handle.includes("w")) oh = ow / ratio;
-                else ow = oh * ratio;
-             }
+        const curData = st.data()!;
+        const asset = curData.assets.find(a => a.id === d.id);
+        const lockRatio = !!asset && (((!asset.shape && !asset.gradient) || e.shiftKey));
+        const ratio = asset ? assetAspectRatio(asset, curData) : d.ow / Math.max(1, d.oh);
+        const minW = 20, minH = Math.max(20, minW / Math.max(0.01, ratio));
+
+        if (lockRatio) {
+          const fromW = d.handle.includes("e") || d.handle.includes("w");
+          const fromH = d.handle.includes("n") || d.handle.includes("s");
+          const signX = d.handle.includes("w") ? -1 : 1;
+          const signY = d.handle.includes("n") ? -1 : 1;
+          let nextW = d.ow;
+          let nextH = d.oh;
+
+          if (fromW && (!fromH || Math.abs(dx) >= Math.abs(dy))) {
+            nextW = Math.max(minW, d.ow + dx * signX);
+            nextH = nextW / ratio;
+          } else if (fromH) {
+            nextH = Math.max(minH, d.oh + dy * signY);
+            nextW = nextH * ratio;
           }
+
+          ow = nextW; oh = nextH;
+          if (d.handle.includes("w")) ox = d.ox + (d.ow - ow);
+          if (d.handle.includes("n")) oy = d.oy + (d.oh - oh);
+        } else {
+          if (d.handle.includes("e")) ow = Math.max(20, d.ow + dx);
+          if (d.handle.includes("s")) oh = Math.max(20, d.oh + dy);
+          if (d.handle.includes("w")) { ow = Math.max(20, d.ow - dx); ox = d.ox + (d.ow - ow); }
+          if (d.handle.includes("n")) { oh = Math.max(20, d.oh - dy); oy = d.oy + (d.oh - oh); }
         }
-        
+
         st.updateAsset(d.id, { x: ox, y: oy, width: ow, height: oh });
       } else if (d.mode === "rotate") {
         const ang = (Math.atan2(p.y - d.cy, p.x - d.cx) * 180) / Math.PI; let rot = d.oRot + (ang - d.startAngle);
@@ -256,6 +314,8 @@ export default function Canvas() {
   if (!data) return null;
   const selAsset = selKind === "asset" ? data.assets.find((a) => a.id === selId) : undefined;
   const layerOrder = Object.fromEntries(data.layers.map((l, i) => [l.id, i]));
+  const layerLocked = Object.fromEntries(data.layers.map((l) => [l.id, !!l.locked]));
+  const selectableSelIds = selIds.filter((id) => { const a = data.assets.find(x => x.id === id); return a && !a.locked && !layerLocked[a.layerId]; });
 
   return (
     <div ref={containerRef} className="relative flex h-full w-full items-center justify-center overflow-auto bg-[#0a0e1a] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.05)_1px,transparent_0)] [background-size:24px_24px]">
@@ -263,8 +323,27 @@ export default function Canvas() {
       <CanvasToolbar selIds={selIds} assets={data.assets} W={W} H={H} />
       <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-md bg-slate-900/80 px-2 py-1 text-[11px] font-mono text-slate-400 backdrop-blur">{Math.round(scale * 100)}% · {W}×{H}</div>
       {runtimePreview && (
-        <div className="pointer-events-none absolute right-3 top-3 z-40 flex items-center gap-1.5 rounded-md bg-emerald-900/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 backdrop-blur">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
+        <div className="pointer-events-auto absolute right-3 top-3 z-40 min-w-[430px] rounded-md bg-emerald-900/70 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 backdrop-blur">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> RUNTIME PREVIEW
+          </div>
+          <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+            <span className="mr-1 shrink-0 text-emerald-200/70">Speed</span>
+            {RUNTIME_SPEEDS.map((speed) => (
+              <button
+                key={speed}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); useStore.getState().setRuntimePreviewSpeed(speed); }}
+                className={`rounded px-1.5 py-0.5 text-[10px] ${runtimePreviewSpeed === speed ? "bg-emerald-400 text-emerald-950" : "bg-emerald-950/60 text-emerald-200 hover:bg-emerald-800"}`}
+                title={`Preview only: ${speed}x runtime speed`}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 border-t border-emerald-700/50 pt-1 font-mono text-[12px] text-emerald-100">
+            Sim time: {formatRuntimeTime(simulatedSeconds)}
+          </div>
         </div>
       )}
       <div ref={stageRef} onPointerDown={onStageDown} className="relative origin-center shadow-2xl shadow-black/60" style={{ width: W, height: H, transform: `scale(${scale})`, background: data.bgColor, cursor: tool !== "select" ? "crosshair" : "default" }}>
@@ -276,49 +355,50 @@ export default function Canvas() {
               const layerAssets = data.assets.filter(a => a.layerId === layer.id && a.visible).sort((a, b) => a.zoffset - b.zoffset);
               const layerParticles = data.particles.filter(p => p.layerId === layer.id && p.enabled);
               return (
-                <div key={layer.id} className="absolute inset-0 pointer-events-none" style={{ zIndex: (layerOrder[layer.id] ?? 0) * 10 }}>
+                <div key={layer.id} className="absolute inset-0 pointer-events-none">
                   {layerAssets.map((a) => {
                     const media = data.media.find((m) => m.id === a.mediaId);
                     const interactive = tool === "select" && !a.locked && layer.locked !== true;
-                    return <AssetView key={a.id} a={a} media={media} interactive={interactive} ringed={selIds.includes(a.id) && a.id !== selId} onPointerDown={(e) => interactive && onAssetPointerDown(e, a)} />;
+                    const renderZ = (layerOrder[layer.id] ?? 0) * 1000 + (a.zoffset ?? 0) + 10;
+                    return <AssetView key={a.id} a={a} media={media} renderZ={renderZ} interactive={interactive} ringed={selectableSelIds.includes(a.id) && a.id !== selId} onPointerDown={(e) => interactive && onAssetPointerDown(e, a)} />;
                   })}
-                  {layerParticles.length > 0 && <EditorParticles W={W} H={H} layerId={layer.id} />}
+                  {layerParticles.length > 0 && <EditorParticles W={W} H={H} layerId={layer.id} zIndex={(layerOrder[layer.id] ?? 0) * 1000 + 500} />}
                 </div>
               );
             })}
-            {selIds.filter((id) => { const a = data.assets.find(x => x.id === id); return a && !a.locked; }).length > 1 && tool === "select" && (
+            {selectableSelIds.length > 1 && tool === "select" && (
               <MultiSelectionBox
-                assets={data.assets.filter(a => selIds.includes(a.id) && !a.locked)}
+                assets={data.assets.filter(a => selectableSelIds.includes(a.id))}
                 onResizeDown={(handle, e) => {
                   e.stopPropagation(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selIds.includes(a.id) && !a.locked); if (!sel.length) return;
+                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selectableSelIds.includes(a.id)); if (!sel.length) return;
                   const minX = Math.min(...sel.map(a => a.x)), minY = Math.min(...sel.map(a => a.y)), maxX = Math.max(...sel.map(a => a.x + a.width)), maxY = Math.max(...sel.map(a => a.y + a.height));
                   const p = toCanvas(e.clientX, e.clientY);
                   setDrag({ mode: "multi-resize", handles: handle, sx: p.x, sy: p.y, ox: minX, oy: minY, ow: maxX - minX, oh: maxY - minY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2, origs: sel.map(a => ({ id: a.id, x: a.x, y: a.y, width: a.width, height: a.height })) });
                 }}
                 onRotateDown={(e) => {
                   e.stopPropagation(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selIds.includes(a.id) && !a.locked); if (!sel.length) return;
+                  const st = useStore.getState(), sel = st.data()!.assets.filter(a => selectableSelIds.includes(a.id)); if (!sel.length) return;
                   const minX = Math.min(...sel.map(a => a.x)), minY = Math.min(...sel.map(a => a.y)), maxX = Math.max(...sel.map(a => a.x + a.width)), maxY = Math.max(...sel.map(a => a.y + a.height));
                   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, p = toCanvas(e.clientX, e.clientY), startAngle = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI;
                   setDrag({ mode: "multi-rotate", cx, cy, startAngle, origs: sel.map(a => ({ id: a.id, x: a.x, y: a.y, width: a.width, height: a.height, rot: a.rotation })) });
                 }}
               />
             )}
-            {selIds.length === 1 && selAsset && tool === "select" && <SelectionBox a={selAsset} isMulti={false} onResizeDown={onResizeDown} onRotateDown={onRotateDown} />}
+            {selectableSelIds.length === 1 && selAsset && selectableSelIds[0] === selAsset.id && tool === "select" && <SelectionBox a={selAsset} isMulti={false} onResizeDown={onResizeDown} onRotateDown={onRotateDown} />}
             {drag?.mode === "marquee" && <div className="absolute border border-violet-400 bg-violet-500/20" style={{ left: Math.min(drag.sx, drag.cx), top: Math.min(drag.sy, drag.cy), width: Math.abs(drag.cx - drag.sx), height: Math.abs(drag.cy - drag.sy), pointerEvents: "none", zIndex: 9999 }} />}
             {snapLines.x !== undefined && <div className="absolute top-0 bottom-0 border-l border-violet-500 z-[9999] pointer-events-none" style={{left: snapLines.x}} />}
             {snapLines.y !== undefined && <div className="absolute left-0 right-0 border-t border-violet-500 z-[9999] pointer-events-none" style={{top: snapLines.y}} />}
             <svg className="pointer-events-none absolute inset-0" width={W} height={H}>{data.zones.map((z) => <ZoneShapeSvg key={z.id} z={z} selected={selKind === "zone" && selId === z.id} />)}</svg>
             {tab === "zones" && tool === "select" && data.zones.map((z) => <ZoneHandles key={z.id} z={z} selected={selKind === "zone" && selId === z.id} onDown={onZoneDown} />)}
-            <svg className="absolute inset-0" width={W} height={H} style={{ pointerEvents: tab === "paths" ? "auto" : "none" }}>
+            {tab === "paths" && <svg className="absolute inset-0" width={W} height={H} style={{ pointerEvents: "auto" }}>
               {data.paths.map((path) => {
                 const pathId = `path-anim-${path.id}`;
                 return (
                   <g key={path.id}>
                     <path id={pathId} d={pathSvgD(path)} fill="none" stroke="transparent" strokeWidth={0} />
-                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={12} strokeOpacity={0} className={tab === "paths" ? "cursor-move pointer-events-auto" : ""} onPointerDown={(e) => { if (tab !== "paths") return; e.stopPropagation(); const p = toCanvas(e.clientX, e.clientY); useStore.getState().setActivePath(path.id); useStore.getState().select("path", path.id); setDrag({ mode: "movePath", id: path.id, sx: p.x, sy: p.y, origPoints: [...path.points] }); }} />
-                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={3} strokeDasharray="10 8" opacity={activePathId && path.id === activePathId ? 1 : (tab === "paths" || tool === "path" ? 0.7 : 0.25)} pointerEvents="none" />
+                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={12} strokeOpacity={0} className="cursor-move pointer-events-auto" onPointerDown={(e) => { e.stopPropagation(); const p = toCanvas(e.clientX, e.clientY); useStore.getState().setActivePath(path.id); useStore.getState().select("path", path.id); setDrag({ mode: "movePath", id: path.id, sx: p.x, sy: p.y, origPoints: [...path.points] }); }} />
+                    <path d={pathSvgD(path)} fill="none" stroke={path.color} strokeWidth={3} strokeDasharray={(path.mode ?? "curve") === "angle" ? undefined : "10 8"} opacity={activePathId && path.id === activePathId ? 1 : 0.7} pointerEvents="none" />
                     {activePathId === path.id && (
                       <circle r="6" fill="#facc15" stroke="#fff" strokeWidth={2}>
                         <animateMotion dur="4s" repeatCount="indefinite" path={pathSvgD(path)} />
@@ -327,21 +407,23 @@ export default function Canvas() {
                   </g>
                 );
               })}
-            </svg>
-            {activePathId && (tab === "paths" || tool === "path") && (() => {
+            </svg>}
+            {activePathId && tab === "paths" && (() => {
                 const path = data.paths.find((p) => p.id === activePathId); if (!path) return null;
                 return (
                   <svg className="absolute inset-0" width={W} height={H} style={{ overflow: "visible", pointerEvents: "none" }}>
-                    {path.points.map((pt, i) => (
+                    {path.points.map((pt, i) => {
+                      const showCurveHandles = (path.mode ?? "curve") === "curve";
+                      return (
                       <g key={pt.id} style={{ pointerEvents: "auto" }}>
-                        <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hIn.x} y2={pt.y + pt.hIn.y} stroke="#60a5fa" strokeWidth={1.5} />
-                        <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hOut.x} y2={pt.y + pt.hOut.y} stroke="#f472b6" strokeWidth={1.5} />
-                        <circle cx={pt.x + pt.hIn.x} cy={pt.y + pt.hIn.y} r={8} fill="#60a5fa" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "in")} />
-                        <circle cx={pt.x + pt.hOut.x} cy={pt.y + pt.hOut.y} r={8} fill="#f472b6" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "out")} />
+                        {showCurveHandles && <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hIn.x} y2={pt.y + pt.hIn.y} stroke="#60a5fa" strokeWidth={1.5} />}
+                        {showCurveHandles && <line x1={pt.x} y1={pt.y} x2={pt.x + pt.hOut.x} y2={pt.y + pt.hOut.y} stroke="#f472b6" strokeWidth={1.5} />}
+                        {showCurveHandles && <circle cx={pt.x + pt.hIn.x} cy={pt.y + pt.hIn.y} r={8} fill="#60a5fa" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "in")} />}
+                        {showCurveHandles && <circle cx={pt.x + pt.hOut.x} cy={pt.y + pt.hOut.y} r={8} fill="#f472b6" style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "out")} />}
                         {i === 0 && path.points.length > 2 && <circle cx={pt.x} cy={pt.y} r={16} fill="none" stroke="#facc15" strokeWidth={2} strokeDasharray="4 3" style={{ pointerEvents: "auto", cursor: "pointer" }} onPointerDown={() => useStore.getState().updatePath(path.id, { closed: true })} />}
                         <rect x={pt.x - 8} y={pt.y - 8} width={16} height={16} rx={3} fill="#fff" stroke={path.color} strokeWidth={2.5} style={{ cursor: "grab" }} onPointerDown={(e) => onPointDown(e, path, pt.id, "p")} onContextMenu={(e) => { e.preventDefault(); if (path.points.length > 2) useStore.getState().updatePath(path.id, { points: path.points.filter((pp) => pp.id !== pt.id) }); }} />
                       </g>
-                    ))}
+                    );})}
                   </svg>
                 );
               })()}
@@ -369,6 +451,10 @@ function ShapeView({ shape }: { shape: any }) {
     <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
       {shape.kind === "ellipse" && <ellipse cx="50" cy="50" rx={50 - sw} ry={50 - sw} fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
       {shape.kind === "triangle" && <polygon points="50,4 96,96 4,96" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "diamond" && <polygon points="50,3 97,50 50,97 3,50" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "pentagon" && <polygon points="50,3 97,38 79,96 21,96 3,38" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "hexagon" && <polygon points="25,5 75,5 98,50 75,95 25,95 2,50" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
+      {shape.kind === "star" && <polygon points="50,3 61,36 96,36 68,56 79,91 50,70 21,91 32,56 4,36 39,36" fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
       {shape.kind === "line" && <line x1="2" y1="50" x2="98" y2="50" stroke={shape.stroke} strokeWidth={sw} strokeLinecap="round" style={common} />}
       {shape.kind === "rect" && <rect x={sw} y={sw} width={100 - sw * 2} height={100 - sw * 2} rx={shape.radius} fill={shape.fill} stroke={shape.stroke} strokeWidth={sw} style={common} />}
     </svg>
@@ -387,7 +473,39 @@ function LottieView({ dataUrl }: { dataUrl: string }) {
   return <div ref={ref} className="h-full w-full" />;
 }
 
-function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: CanvasAsset; media: any; interactive: boolean; ringed: boolean; onPointerDown: (e: React.PointerEvent) => void; }) {
+function GradientAssetView({ a }: { a: CanvasAsset }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const g = a.gradient;
+    const el = ref.current;
+    if (!g || !el) return;
+    if (!g.animate) {
+      el.style.background = gradientCss(g.type, g.angle, g.stops);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick);
+      const anim = computeGradientAnim(g, (ts - start) / 1000);
+      const animType = g.animType || (g.type === "linear" ? "rotation" : "hue");
+      if (animType === "panning") {
+        el.style.backgroundSize = g.type === "linear" ? "220% 220%" : "100% 100%";
+        el.style.backgroundPosition = `${anim.panPercent}% 50%`;
+        el.style.background = gradientCss(g.type, g.angle, g.stops);
+      } else if (animType === "hue") {
+        el.style.background = gradientCss(g.type, g.angle, g.stops, anim.hueShift);
+      } else {
+        el.style.background = gradientCss(g.type, anim.angle, g.stops);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [a.gradient]);
+  return <div ref={ref} className="h-full w-full" />;
+}
+
+function AssetView({ a, media, renderZ, interactive, ringed, onPointerDown }: { a: CanvasAsset; media: any; renderZ: number; interactive: boolean; ringed: boolean; onPointerDown: (e: React.PointerEvent) => void; }) {
   const ref = useRef<HTMLDivElement>(null);
   const sx = a.flipH ? -a.scale : a.scale, sy = a.flipV ? -a.scale : a.scale;
   const baseFilter = a.shadow?.enabled ? `drop-shadow(${a.shadow.offsetX}px ${a.shadow.offsetY}px ${a.shadow.blur}px ${a.shadow.color})` : "";
@@ -398,8 +516,8 @@ function AssetView({ a, media, interactive, ringed, onPointerDown }: { a: Canvas
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
   }, [a.animation, a.animSpeed, a.rotation, sx, sy, baseFilter]);
   return (
-    <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, opacity: a.opacity, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
-      {a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
+    <div ref={ref} onPointerDown={onPointerDown} className={`absolute select-none ${ringed ? "ring-2 ring-violet-500/50" : ""}`} style={{ left: a.x, top: a.y, width: a.width, height: a.height, zIndex: renderZ, opacity: a.opacity, mixBlendMode: a.blend === "add" ? "plus-lighter" : a.blend, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%`, cursor: interactive ? "move" : "default", pointerEvents: interactive ? "auto" : "none", filter: baseFilter || undefined }}>
+      {a.gradient ? <GradientAssetView a={a} /> : a.shape ? <ShapeView shape={a.shape} /> : media?.type === "lottie" ? <LottieView dataUrl={media.dataUrl} /> : media?.type === "video" ? <video src={media.dataUrl} autoPlay loop muted playsInline referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} /> : <img src={media?.dataUrl} draggable={false} referrerPolicy="no-referrer" className="h-full w-full" style={{ objectFit: fitToCss(a.fit) }} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.style.background = '#ef4444'; e.currentTarget.parentElement!.style.display = 'flex'; e.currentTarget.parentElement!.style.alignItems = 'center'; e.currentTarget.parentElement!.style.justifyContent = 'center'; e.currentTarget.parentElement!.innerText = 'Broken Image'; }} />}
     </div>
   );
 }
@@ -408,7 +526,7 @@ function SelectionBox({ a, isMulti, onResizeDown, onRotateDown }: { a: CanvasAss
   const handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
   const pos: Record<string, { left: string; top: string; cursor: string }> = { nw: { left: "0%", top: "0%", cursor: "nwse-resize" }, n: { left: "50%", top: "0%", cursor: "ns-resize" }, ne: { left: "100%", top: "0%", cursor: "nesw-resize" }, e: { left: "100%", top: "50%", cursor: "ew-resize" }, se: { left: "100%", top: "100%", cursor: "nwse-resize" }, s: { left: "50%", top: "100%", cursor: "ns-resize" }, sw: { left: "0%", top: "100%", cursor: "nesw-resize" }, w: { left: "0%", top: "50%", cursor: "ew-resize" } };
   return (
-    <div className="pointer-events-none absolute border-2 border-violet-400" style={{ left: a.x, top: a.y, width: a.width, height: a.height, transform: `rotate(${a.rotation}deg) scale(${a.scale})`, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%` }}>
+    <div className="pointer-events-none absolute border-2 border-violet-400" style={{ left: a.x, top: a.y, width: a.width, height: a.height, zIndex: 99999, transform: `rotate(${a.rotation}deg) scale(${a.scale})`, transformOrigin: `${(a.refPointX ?? 0.5) * 100}% ${(a.refPointY ?? 0.5) * 100}%` }}>
       {!isMulti && handles.map((h) => <div key={h} onPointerDown={(e) => onResizeDown(e, a, h)} className="pointer-events-auto absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-violet-400 bg-white shadow" style={{ left: pos[h].left, top: pos[h].top, cursor: pos[h].cursor }} />)}
       {!isMulti && (<><div onPointerDown={(e) => onRotateDown(e, a)} className="pointer-events-auto absolute left-1/2 h-5 w-5 -translate-x-1/2 cursor-grab rounded-full border-2 border-violet-400 bg-white shadow" style={{ top: -40 }} /><div className="absolute left-1/2 h-8 w-0.5 -translate-x-1/2 bg-violet-400" style={{ top: -32 }} /></>)}
     </div>
@@ -420,7 +538,7 @@ function MultiSelectionBox({ assets, onResizeDown, onRotateDown }: { assets: Can
   const minX = Math.min(...assets.map((a) => a.x)), minY = Math.min(...assets.map((a) => a.y)), maxX = Math.max(...assets.map((a) => a.x + a.width)), maxY = Math.max(...assets.map((a) => a.y + a.height));
   const w = maxX - minX, h = maxY - minY;
   const handles: { name: string; left: string; top: string; cursor: string }[] = [ { name: "nw", left: "0%", top: "0%", cursor: "nwse-resize" }, { name: "n", left: "50%", top: "0%", cursor: "ns-resize" }, { name: "ne", left: "100%", top: "0%", cursor: "nesw-resize" }, { name: "e", left: "100%", top: "50%", cursor: "ew-resize" }, { name: "se", left: "100%", top: "100%", cursor: "nwse-resize" }, { name: "s", left: "50%", top: "100%", cursor: "ns-resize" }, { name: "sw", left: "0%", top: "100%", cursor: "nesw-resize" }, { name: "w", left: "0%", top: "50%", cursor: "ew-resize" } ];
-  return (<div className="pointer-events-none absolute border-2 border-violet-400 border-dashed" style={{ left: minX, top: minY, width: w, height: h }}><div className="absolute -top-6 whitespace-nowrap rounded bg-violet-500 px-1.5 py-0.5 text-[9px] text-white">Multi-selected ({assets.length})</div>{handles.map((h) => (<div key={h.name} onPointerDown={(e) => onResizeDown(h.name, e)} className="pointer-events-auto absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-violet-400 bg-white shadow" style={{ left: h.left, top: h.top, cursor: h.cursor }} />))}<div onPointerDown={onRotateDown} className="pointer-events-auto absolute left-1/2 h-5 w-5 -translate-x-1/2 cursor-grab rounded-full border-2 border-violet-400 bg-white shadow" style={{ top: -40 }} /><div className="absolute left-1/2 h-8 w-0.5 -translate-x-1/2 bg-violet-400" style={{ top: -32 }} /></div>);
+  return (<div className="pointer-events-none absolute border-2 border-violet-400 border-dashed" style={{ left: minX, top: minY, width: w, height: h, zIndex: 99999 }}><div className="absolute -top-6 whitespace-nowrap rounded bg-violet-500 px-1.5 py-0.5 text-[9px] text-white">Multi-selected ({assets.length})</div>{handles.map((h) => (<div key={h.name} onPointerDown={(e) => onResizeDown(h.name, e)} className="pointer-events-auto absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-violet-400 bg-white shadow" style={{ left: h.left, top: h.top, cursor: h.cursor }} />))}<div onPointerDown={onRotateDown} className="pointer-events-auto absolute left-1/2 h-5 w-5 -translate-x-1/2 cursor-grab rounded-full border-2 border-violet-400 bg-white shadow" style={{ top: -40 }} /><div className="absolute left-1/2 h-8 w-0.5 -translate-x-1/2 bg-violet-400" style={{ top: -32 }} /></div>);
 }
 
 function ZoneShapeSvg({ z, selected }: { z: Zone; selected: boolean }) {

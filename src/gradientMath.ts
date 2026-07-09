@@ -121,6 +121,23 @@ export function gradientCss(
 }
 
 /** Compute behavior animation transform string for a given time. */
+export function oneShotTransform(anim: string | undefined, progress: number, entering: boolean): { transform: string; opacity: number } {
+  const t = Math.max(0, Math.min(1, progress));
+  const e = entering ? t : 1 - t;
+  const inv = 1 - e;
+  if (!anim || anim === "none") return { transform: "", opacity: 1 };
+  if (anim === "fade") return { transform: "", opacity: e };
+  if (anim === "scale") return { transform: `scale(${0.2 + e * 0.8})`, opacity: e };
+  if (anim === "pop") return { transform: `scale(${e < 0.7 ? 0.4 + e * 1.05 : 1.12 - (e - 0.7) * 0.4})`, opacity: e };
+  if (anim === "spin") return { transform: `rotate(${inv * (entering ? -180 : 180)}deg) scale(${0.5 + e * 0.5})`, opacity: e };
+  const d = inv * 80;
+  if (anim === "slide-up") return { transform: `translateY(${d}px)`, opacity: e };
+  if (anim === "slide-down") return { transform: `translateY(${-d}px)`, opacity: e };
+  if (anim === "slide-left") return { transform: `translateX(${d}px)`, opacity: e };
+  if (anim === "slide-right") return { transform: `translateX(${-d}px)`, opacity: e };
+  return { transform: "", opacity: 1 };
+}
+
 export function behaviorTransform(
   anim: string | undefined,
   t: number,
@@ -163,6 +180,33 @@ export function behaviorTransform(
       break;
     case "blur":
       filter = `blur(${Math.max(0, Math.sin(p * 2) * 8)}px)`;
+      break;
+    case "heartbeat": {
+      const beat = Math.pow(Math.abs(Math.sin(p * 5)), 8);
+      transform += `scale(${1 + beat * 0.25})`;
+      break;
+    }
+    case "sway":
+      transform += `rotate(${Math.sin(p * 2) * 8}deg) translateX(${Math.sin(p * 2) * 8}px)`;
+      break;
+    case "jelly":
+      transform += `scale(${1 + Math.sin(p * 5) * 0.12}, ${1 - Math.sin(p * 5) * 0.1})`;
+      break;
+    case "breathe":
+      transform += `scale(${1 + (Math.sin(p * 2) * 0.5 + 0.5) * 0.12})`;
+      break;
+    case "drift":
+      transform += `translate(${Math.sin(p * 1.3) * 24}px, ${Math.cos(p * 1.1) * 18}px)`;
+      break;
+    case "glitch":
+      transform += `translate(${Math.sin(p * 41) * 6}px, ${Math.cos(p * 37) * 3}px) skewX(${Math.sin(p * 29) * 8}deg)`;
+      filter = `hue-rotate(${Math.sin(p * 13) * 25}deg)`;
+      break;
+    case "orbit":
+      transform += `translate(${Math.cos(p * 2) * 18}px, ${Math.sin(p * 2) * 18}px)`;
+      break;
+    case "tada":
+      transform += `rotate(${Math.sin(p * 10) * 10}deg) scale(${1 + Math.abs(Math.sin(p * 5)) * 0.12})`;
       break;
   }
   return { transform, filter };
