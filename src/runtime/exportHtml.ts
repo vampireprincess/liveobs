@@ -18,7 +18,15 @@ function pruneUnusedMedia(data: ProjectData): ProjectData {
   // Export visible scene assets, plus layer-rand template assets that are ON in
   // "Assets on Canvas" even if their layer eye is hidden. Those templates are
   // required for random runtime spawns.
-  d.assets = d.assets.filter((a) => visibleLayerIds.has(a.layerId) && (a.visible || a.layerId === "layer-rand"));
+  d.assets = d.assets.filter((a) => {
+    if (!visibleLayerIds.has(a.layerId)) return false;
+    if (a.layerId !== "layer-rand") return a.visible;
+    if (a.visible) return true;
+    const media = d.media.find((m) => m.id === a.mediaId);
+    const schedule: any = media?.schedule;
+    // Hidden random template assets are exported only when they can actually spawn.
+    return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+  });
   d.assets.forEach((a) => {
     if (!a.mediaId) return;
     used.add(a.mediaId);

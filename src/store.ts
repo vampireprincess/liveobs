@@ -157,7 +157,7 @@ export const useStore = create<AppState>((set, get) => {
           })),
           assets: p.data.assets.map((a) => {
             const media = (p.data.media || []).find((m: any) => m.id === a.mediaId);
-            const looksLikeGradient = a.gradient || a.name === "Gradient Layer" || media?.name === "Gradient Layer";
+            const looksLikeGradient = a.gradient || /gradient/i.test(a.name ?? "") || /gradient/i.test(media?.name ?? "");
             return {
               ...a,
               fit: a.fit ?? "contain",
