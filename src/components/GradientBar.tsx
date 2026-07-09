@@ -105,7 +105,7 @@ export default function GradientBar({ stops, onChange }: Props) {
   };
 
   return (
-    <div>
+    <div data-local-undo="true">
       <div className="mb-1 flex items-center justify-between text-[9px] text-slate-500">
         <span className="uppercase tracking-wide">Color Stops</span>
         <span>Click bar to add · Right-click node to delete</span>

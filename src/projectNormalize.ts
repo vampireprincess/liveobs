@@ -16,6 +16,15 @@ export function normalizeCanvasSize(data: ProjectData): ProjectData {
     d.canvasWidth = DEFAULT_CANVAS_WIDTH;
     d.canvasHeight = DEFAULT_CANVAS_HEIGHT;
   }
+  const fallbackGradient = d.gradientStudio?.gradient ?? d.bgGradient;
+  if (fallbackGradient) {
+    d.assets.forEach((a) => {
+      if (a.gradient) return;
+      const media = a.mediaId ? d.media.find((m) => m.id === a.mediaId) : undefined;
+      const looksLikeGradient = /gradient/i.test(a.name ?? "") || /gradient/i.test(media?.name ?? "");
+      if (looksLikeGradient) a.gradient = structuredClone(fallbackGradient);
+    });
+  }
   return d;
 }
 
