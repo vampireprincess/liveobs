@@ -18,7 +18,15 @@ function pruneUnusedMedia(data: ProjectData): ProjectData {
   // Export visible scene assets, plus layer-rand template assets that are ON in
   // "Assets on Canvas" even if their layer eye is hidden. Those templates are
   // required for random runtime spawns.
-  d.assets = d.assets.filter((a) => visibleLayerIds.has(a.layerId) && (a.visible || a.layerId === "layer-rand"));
+  d.assets = d.assets.filter((a) => {
+    if (!visibleLayerIds.has(a.layerId)) return false;
+    if (a.layerId !== "layer-rand") return a.visible;
+    if (a.visible) return true;
+    const media = d.media.find((m) => m.id === a.mediaId);
+    const schedule: any = media?.schedule;
+    // Hidden random template assets are exported only when they can actually spawn.
+    return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+  });
   d.assets.forEach((a) => {
     if (!a.mediaId) return;
     used.add(a.mediaId);
@@ -83,11 +91,11 @@ export async function exportZip(project: Project): Promise<void> {
   const data = normalizeExportData(project.data);
   const assetFolder = zip.folder("assets");
   for (const media of data.media) {
+    // Keep used Lottie JSON inline in project data: lottie-web path loading from local ZIP
+    // can be unreliable in file:// / OBS contexts, while inline JSON is small and robust.
+    if (media.type === "lottie" || media.dataUrl.startsWith("data:application/json")) continue;
     const parsed = dataUrlToFile(media.dataUrl);
     if (parsed) {
-      // Keep used Lottie JSON inline in project data: lottie-web path loading from local ZIP
-      // can be unreliable in file:// / OBS contexts, while inline JSON is small and robust.
-      if (media.type === "lottie") continue;
       const filename = `${media.id}-${sanitize(media.name)}.${parsed.ext}`;
       assetFolder?.file(filename, parsed.bytes);
       media.dataUrl = `assets/${filename}`;

@@ -148,17 +148,21 @@ export default function GradientTab() {
   const pushPaletteUndo = () => {
     paletteUndo.current = [...paletteUndo.current, { paletteColors, activeColors, savedPalettes }].slice(-30);
   };
+  const undoPalette = () => {
+    const prev = paletteUndo.current.pop();
+    if (!prev) return;
+    setPaletteColors(prev.paletteColors);
+    setActiveColors(prev.activeColors);
+    setSavedPalettes(prev.savedPalettes);
+    saveSavedPalettes(prev.savedPalettes);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
-      const prev = paletteUndo.current.pop();
-      if (!prev) return;
+      if (!paletteUndo.current.length) return;
       e.preventDefault();
-      setPaletteColors(prev.paletteColors);
-      setActiveColors(prev.activeColors);
-      setSavedPalettes(prev.savedPalettes);
-      saveSavedPalettes(prev.savedPalettes);
+      undoPalette();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -277,7 +281,8 @@ export default function GradientTab() {
                 />
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              <Btn onClick={undoPalette}>↶ Undo Swatch</Btn>
               <Btn onClick={savePalette}>💾 Save Swatch</Btn>
               <Btn variant="primary" onClick={makeGradientFromPalette}>→ Make Gradient</Btn>
             </div>

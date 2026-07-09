@@ -24,15 +24,14 @@ export default function ExportTab() {
     return bgAssets.length ? bgAssets : data.assets.filter((a) => a.visible && a.layerId !== "layer-rand");
   }, [data.assets, data.layers]);
   const selectedBgAsset = backgroundSizeAssets.find((a) => a.id === bgSizeAssetId) ?? backgroundSizeAssets[0];
-  const selectedBgMedia = selectedBgAsset?.mediaId ? data.media.find((m) => m.id === selectedBgAsset.mediaId) : undefined;
 
-  const setCanvasFromAsset = (mode: "placed" | "source") => {
+  const setCanvasFromAsset = () => {
     if (!selectedBgAsset) return;
-    const w = mode === "source" ? selectedBgMedia?.width ?? selectedBgAsset.width : selectedBgAsset.width;
-    const h = mode === "source" ? selectedBgMedia?.height ?? selectedBgAsset.height : selectedBgAsset.height;
+    // Important: only the canvas/base resolution changes. The selected asset keeps
+    // the same x/y/width/height so the canvas is resized underneath it.
     upd((d) => {
-      d.canvasWidth = Math.max(320, Math.round(w));
-      d.canvasHeight = Math.max(240, Math.round(h));
+      d.canvasWidth = Math.max(320, Math.round(selectedBgAsset.width));
+      d.canvasHeight = Math.max(240, Math.round(selectedBgAsset.height));
     });
     window.dispatchEvent(new CustomEvent("liveobs-force-runtime-rebuild"));
   };
@@ -41,7 +40,14 @@ export default function ExportTab() {
   const known = SIZES.some((s) => s.value === sizeKey) ? sizeKey : "custom";
   const usedMediaIds = new Set(
     data.assets
-      .filter((a) => data.layers.find((l) => l.id === a.layerId)?.visible !== false && (a.visible || a.layerId === "layer-rand"))
+      .filter((a) => {
+        if (data.layers.find((l) => l.id === a.layerId)?.visible === false) return false;
+        if (a.layerId !== "layer-rand") return a.visible;
+        if (a.visible) return true;
+        const media = data.media.find((m) => m.id === a.mediaId);
+        const schedule: any = media?.schedule;
+        return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+      })
       .map((a) => a.mediaId)
       .filter(Boolean)
   );
@@ -80,11 +86,8 @@ export default function ExportTab() {
                 options={backgroundSizeAssets.map((a) => ({ value: a.id, label: `${a.name} · placed ${Math.round(a.width)}×${Math.round(a.height)}` }))}
               />
             </Field>
-            <div className="grid grid-cols-2 gap-1.5">
-              <Btn onClick={() => setCanvasFromAsset("placed")}>Use placed size</Btn>
-              <Btn onClick={() => setCanvasFromAsset("source")} disabled={!selectedBgMedia?.width || !selectedBgMedia?.height}>Use source size</Btn>
-            </div>
-            <p className="mt-1 text-[10px] text-slate-500">Use this when your background image is intentionally larger/different than 1920×1080.</p>
+            <Btn className="w-full" onClick={setCanvasFromAsset}>Use current asset size as canvas</Btn>
+            <p className="mt-1 text-[10px] text-slate-500">Only canvas/base resolution changes. The background asset stays at the same position and size.</p>
           </div>
         )}
         {!data.bgGradient?.enabled && (

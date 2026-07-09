@@ -221,7 +221,8 @@ export class RuntimeEngine {
 
     for (const a of this.data.assets) {
       if (!a.visible) continue;
-      if (a.layerId === "layer-rand" && !a.gradient) continue;
+      const staticMediaForLayerCheck = a.mediaId ? this.data.media.find((m) => m.id === a.mediaId) : undefined;
+      if (a.layerId === "layer-rand" && !a.gradient && staticMediaForLayerCheck?.inLibrary !== false) continue;
       const layerIndex = this.data.layers.findIndex((l) => l.id === a.layerId);
       const layerEl = this.root;
       const el = document.createElement("div");

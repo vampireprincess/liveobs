@@ -22,6 +22,7 @@ export default function App() {
       const target = e.target as HTMLElement;
       const st = useStore.getState();
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        if (target.closest("[data-local-undo='true']")) return;
         const input = target as HTMLInputElement;
         const allowAppUndo = target.tagName !== "INPUT" || input.type === "color" || input.type === "range";
         if (allowAppUndo) {

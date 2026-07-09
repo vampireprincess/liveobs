@@ -33,6 +33,7 @@ export default function AssetInspector() {
   const isMediaAsset = !a.shape && !!media && !a.gradient;
 
   const canvasFill = (fit: AssetFit) => {
+    if (a.gradient) { set({ x: 0, y: 0, width: W, height: H, fit: "fill" }); return; }
     if (!isMediaAsset) { set({ x: 0, y: 0, width: W, height: H, fit }); return; }
     const containScale = Math.min(W / Math.max(1, media?.width ?? a.width), H / Math.max(1, media?.height ?? a.height));
     const coverScale = Math.max(W / Math.max(1, media?.width ?? a.width), H / Math.max(1, media?.height ?? a.height));

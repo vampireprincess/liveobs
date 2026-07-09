@@ -216,7 +216,8 @@ RuntimeEngine.prototype.build=function(){
   });
   d.assets.forEach(function(a){
     if(!a.visible) return;
-    if(a.layerId==='layer-rand' && !a.gradient) return;
+    var staticMediaForLayerCheck=a.mediaId?d.media.find(function(m){return m.id===a.mediaId;}):null;
+    if(a.layerId==='layer-rand' && !a.gradient && !(staticMediaForLayerCheck&&staticMediaForLayerCheck.inLibrary===false)) return;
     var layerIndex=d.layers.findIndex(function(l){return l.id===a.layerId;});
     var layerEl=root;
     var el=document.createElement('div');
