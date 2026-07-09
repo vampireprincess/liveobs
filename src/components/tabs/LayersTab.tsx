@@ -7,6 +7,7 @@ export default function LayersTab() {
   const data = useStore((s) => s.data())!;
   const [dragId, setDragId] = useState<string | null>(null);
   const [assetDragId, setAssetDragId] = useState<string | null>(null);
+  const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
 
   const reorderAssetTo = (draggedId: string, targetLayerId: string, beforeAssetId?: string) => {
     useStore.getState().update((d) => {
@@ -35,11 +36,13 @@ export default function LayersTab() {
               key={l.id}
               draggable
               onDragStart={() => setDragId(l.id)}
-              onDragOver={(e) => e.preventDefault()}
+              onDragOver={(e) => { e.preventDefault(); setDragOverLayerId(l.id); }}
+              onDragLeave={() => setDragOverLayerId((cur) => cur === l.id ? null : cur)}
               onDrop={() => {
                 if (assetDragId) {
                   reorderAssetTo(assetDragId, l.id);
                   setAssetDragId(null);
+                  setDragOverLayerId(null);
                   return;
                 }
                 if (!dragId || dragId === l.id) return;
@@ -51,8 +54,9 @@ export default function LayersTab() {
                   dd.layers.splice(to, 0, moved);
                 });
                 setDragId(null);
+                setDragOverLayerId(null);
               }}
-              className="rounded-md border border-slate-800 bg-slate-800/40 p-2"
+              className={`rounded-md border p-2 transition ${dragOverLayerId === l.id ? "border-violet-400 bg-violet-500/15 ring-2 ring-violet-400/50" : "border-slate-800 bg-slate-800/40"}`}
             >
               <div className="flex items-center gap-1.5">
                 <span className="cursor-grab text-slate-600">⠿</span>

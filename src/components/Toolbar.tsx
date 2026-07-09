@@ -88,6 +88,13 @@ export default function Toolbar() {
 
         <div className="flex-1" />
 
+        <div className="flex items-center gap-1 rounded-md border border-slate-800 bg-slate-900/70 px-1 py-0.5" title="Workspace zoom only; does not change export resolution">
+          <span className="px-1 text-xs text-slate-400">🔍</span>
+          <button onClick={() => window.dispatchEvent(new CustomEvent("liveobs-canvas-zoom", { detail: -0.1 }))} className="rounded px-2 py-1 text-xs text-slate-200 hover:bg-slate-800">−</button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent("liveobs-canvas-zoom-reset"))} className="rounded px-2 py-1 text-[10px] text-slate-400 hover:bg-slate-800">100%</button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent("liveobs-canvas-zoom", { detail: 0.1 }))} className="rounded px-2 py-1 text-xs text-slate-200 hover:bg-slate-800">+</button>
+        </div>
+
         <Btn onClick={() => useStore.getState().saveNow()}>💾 Save</Btn>
         <Btn
           variant={runtimePreview ? "primary" : "default"}

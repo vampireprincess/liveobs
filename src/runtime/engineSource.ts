@@ -201,7 +201,7 @@ RuntimeEngine.prototype.elapsedSec=function(){
 };
 RuntimeEngine.prototype.build=function(){
   var d=this.data, root=this.root, self=this;
-  root.innerHTML=''; root.style.position='relative'; root.style.overflow='hidden';
+  root.innerHTML=''; root.style.position='relative'; root.style.overflow='hidden'; root.style.isolation='isolate';
   root.style.width=d.canvasWidth+'px'; root.style.height=d.canvasHeight+'px';
   var studio=d.gradientStudio;
   var useStudioBg=studio&&(studio.mode==='background'||studio.mode==='hybrid')&&studio.gradient.stops.length;

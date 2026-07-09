@@ -20,12 +20,10 @@ function pruneUnusedMedia(data: ProjectData): ProjectData {
   // required for random runtime spawns.
   d.assets = d.assets.filter((a) => {
     if (!visibleLayerIds.has(a.layerId)) return false;
-    if (a.layerId !== "layer-rand") return a.visible;
-    if (a.visible) return true;
-    const media = d.media.find((m) => m.id === a.mediaId);
-    const schedule: any = media?.schedule;
-    // Hidden random template assets are exported only when they can actually spawn.
-    return schedule?.enabled !== false && ((schedule?.hourlyLimit ?? 0) > 0 || (schedule?.dailyLimit ?? 0) > 0 || (schedule?.weeklyLimit ?? 0) > 0);
+    // Export only assets the scene actually renders. If a random template is
+    // hidden with the eye toggle, it stays in the editor/library but does not
+    // get exported as a rendered scene element.
+    return a.visible;
   });
   d.assets.forEach((a) => {
     if (!a.mediaId) return;
@@ -55,7 +53,7 @@ export function buildRuntimeHtml(project: Project, opts: { dataOverride?: Projec
 <style>
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;}
   #stage-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
-  #stage{transform-origin:center center;}
+  #stage{transform-origin:center center;isolation:isolate;}
   img,video{-webkit-user-drag:none;user-select:none;}
 </style>
 ${lottieScript}

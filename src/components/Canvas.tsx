@@ -74,6 +74,24 @@ export default function Canvas() {
   }, [W, H]);
 
   useEffect(() => {
+    const zoom = (e: Event) => {
+      const delta = (e as CustomEvent<number>).detail || 0;
+      setScale((s) => Math.max(0.1, Math.min(2.5, Math.round((s + delta) * 100) / 100)));
+    };
+    const reset = () => {
+      const c = containerRef.current; if (!c) return;
+      const s = Math.min((c.clientWidth - 80) / W, (c.clientHeight - 80) / H);
+      setScale(Math.max(0.1, Math.min(1, s)));
+    };
+    window.addEventListener("liveobs-canvas-zoom", zoom);
+    window.addEventListener("liveobs-canvas-zoom-reset", reset);
+    return () => {
+      window.removeEventListener("liveobs-canvas-zoom", zoom);
+      window.removeEventListener("liveobs-canvas-zoom-reset", reset);
+    };
+  }, [W, H]);
+
+  useEffect(() => {
     const handler = () => setRuntimeRebuildNonce((n) => n + 1);
     window.addEventListener("liveobs-force-runtime-rebuild", handler);
     return () => window.removeEventListener("liveobs-force-runtime-rebuild", handler);
@@ -346,7 +364,7 @@ export default function Canvas() {
           </div>
         </div>
       )}
-      <div ref={stageRef} onPointerDown={onStageDown} className="relative origin-center shadow-2xl shadow-black/60" style={{ width: W, height: H, transform: `scale(${scale})`, background: data.bgColor, cursor: tool !== "select" ? "crosshair" : "default" }}>
+      <div ref={stageRef} onPointerDown={onStageDown} className="relative origin-center shadow-2xl shadow-black/60" style={{ width: W, height: H, transform: `scale(${scale})`, background: data.bgColor, isolation: "isolate", cursor: tool !== "select" ? "crosshair" : "default" }}>
         {!runtimePreview && <GradientBackgroundLayer />}
         {!runtimePreview && (
           <>
@@ -389,9 +407,9 @@ export default function Canvas() {
             {drag?.mode === "marquee" && <div className="absolute border border-violet-400 bg-violet-500/20" style={{ left: Math.min(drag.sx, drag.cx), top: Math.min(drag.sy, drag.cy), width: Math.abs(drag.cx - drag.sx), height: Math.abs(drag.cy - drag.sy), pointerEvents: "none", zIndex: 9999 }} />}
             {snapLines.x !== undefined && <div className="absolute top-0 bottom-0 border-l border-violet-500 z-[9999] pointer-events-none" style={{left: snapLines.x}} />}
             {snapLines.y !== undefined && <div className="absolute left-0 right-0 border-t border-violet-500 z-[9999] pointer-events-none" style={{top: snapLines.y}} />}
-            <svg className="pointer-events-none absolute inset-0" width={W} height={H}>{data.zones.map((z) => <ZoneShapeSvg key={z.id} z={z} selected={selKind === "zone" && selId === z.id} />)}</svg>
+            <svg className="pointer-events-none absolute inset-0 z-[90000]" width={W} height={H}>{data.zones.map((z) => <ZoneShapeSvg key={z.id} z={z} selected={selKind === "zone" && selId === z.id} />)}</svg>
             {tab === "zones" && tool === "select" && data.zones.map((z) => <ZoneHandles key={z.id} z={z} selected={selKind === "zone" && selId === z.id} onDown={onZoneDown} />)}
-            {tab === "paths" && <svg className="absolute inset-0" width={W} height={H} style={{ pointerEvents: "auto" }}>
+            {tab === "paths" && <svg className="absolute inset-0 z-[90000]" width={W} height={H} style={{ pointerEvents: "auto" }}>
               {data.paths.map((path) => {
                 const pathId = `path-anim-${path.id}`;
                 return (
@@ -411,7 +429,7 @@ export default function Canvas() {
             {activePathId && tab === "paths" && (() => {
                 const path = data.paths.find((p) => p.id === activePathId); if (!path) return null;
                 return (
-                  <svg className="absolute inset-0" width={W} height={H} style={{ overflow: "visible", pointerEvents: "none" }}>
+                  <svg className="absolute inset-0 z-[90001]" width={W} height={H} style={{ overflow: "visible", pointerEvents: "none" }}>
                     {path.points.map((pt, i) => {
                       const showCurveHandles = (path.mode ?? "curve") === "curve";
                       return (
@@ -553,5 +571,5 @@ function ZoneHandles({ z, selected, onDown }: { z: Zone; selected: boolean; onDo
   if (z.shape === "polygon") return null;
   const handles = ["nw", "ne", "se", "sw"];
   const pos: Record<string, { l: number; t: number }> = { nw: { l: z.x, t: z.y }, ne: { l: z.x + z.w, t: z.y }, se: { l: z.x + z.w, t: z.y + z.h }, sw: { l: z.x, t: z.y + z.h } };
-  return (<><div onPointerDown={(e) => onDown(e, z, "body")} className="absolute" style={{ left: z.x, top: z.y, width: z.w, height: z.h, cursor: "move" }} />{selected && handles.map((h) => <div key={h} onPointerDown={(e) => onDown(e, z, h)} className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 bg-white" style={{ left: pos[h].l, top: pos[h].t, borderColor: z.color, cursor: "nwse-resize" }} />)}</>);
+  return (<><div onPointerDown={(e) => onDown(e, z, "body")} className="absolute" style={{ left: z.x, top: z.y, width: z.w, height: z.h, cursor: "move", zIndex: 90002 }} />{selected && handles.map((h) => <div key={h} onPointerDown={(e) => onDown(e, z, h)} className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 bg-white" style={{ left: pos[h].l, top: pos[h].t, borderColor: z.color, cursor: "nwse-resize", zIndex: 90003 }} />)}</>);
 }

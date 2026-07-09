@@ -204,7 +204,7 @@ export class RuntimeEngine {
 
   build() {
     this.root.innerHTML = "";
-    this.root.style.position = "relative"; this.root.style.overflow = "hidden";
+    this.root.style.position = "relative"; this.root.style.overflow = "hidden"; this.root.style.isolation = "isolate";
     this.root.style.width = this.data.canvasWidth + "px"; this.root.style.height = this.data.canvasHeight + "px";
 
     const studio = this.data.gradientStudio;
